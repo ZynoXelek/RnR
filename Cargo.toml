@@ -1,0 +1,13 @@
+[package]
+name = "d7050e_lab4"
+version = "0.1.0"
+edition = "2018"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+indented = "0.1.0"
+proc-macro2 = "1.0.28"
+quote = "1.0.9"
+# regex = "1.5.4"
+syn = { version = "1.0.74", features = ["full", "extra-traits"] }
