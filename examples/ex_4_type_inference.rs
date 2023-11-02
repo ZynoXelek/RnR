@@ -5,7 +5,7 @@ use d7050e_lab4::{
 
 fn main() {}
 
-// Type checking, optional assignment.
+// Type checking mutability.
 // Extend AST, parser, type checker and EBNF.
 //
 // Rust can typically infer the type of variables.
@@ -46,10 +46,27 @@ fn test_inference2() {
     assert_eq!(ty.unwrap(), Type::I32);
 }
 
+// Rust requires each variable to be typed, either explicit or inferred.
+#[test]
+fn test_inference_fail() {
+    let ts: proc_macro2::TokenStream = "
+    {
+        let a;         // a declared, but type cannot be inferred        
+    }
+    "
+    .parse()
+    .unwrap();
+    let bl: Block = syn::parse2(ts).unwrap();
+    println!("bl {}", bl);
+    let ty = check_block(bl, TypeEnv::new());
+
+    assert_eq!(ty.is_err(), true);
+}
+
 // Rust requires all variables to be assigned.
 // before they are used.
 #[test]
-fn test_inference_fail() {
+fn test_unassigned_fail() {
     let ts: proc_macro2::TokenStream = "
     {
         let a;         // a declared
@@ -63,25 +80,5 @@ fn test_inference_fail() {
     println!("bl {}", bl);
     let ty = check_block(bl, TypeEnv::new());
 
-    assert_eq!(ty.is_error(), true);
-}
-
-// Rust requires all variables to be assigned
-// before they are used.
-#[test]
-fn test_inference_fail() {
-    let ts: proc_macro2::TokenStream = "
-    {
-        let a;         // a declared
-        if a == 5 {};  // <- error, not assigned
-        a        
-    }
-    "
-    .parse()
-    .unwrap();
-    let bl: Block = syn::parse2(ts).unwrap();
-    println!("bl {}", bl);
-    let ty = check_block(bl, TypeEnv::new());
-
-    assert_eq!(ty.is_error(), true);
+    assert_eq!(ty.is_err(), true);
 }

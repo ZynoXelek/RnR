@@ -10,13 +10,16 @@ The basics of type environments and type checking.
   
 - `examples/ex_2_type_check.rs`, implement the type checker. There is a skeleton in `src/type_check.rs`. Make sure all relevant tests passes (not only the one in the example.)
 
-- `examples/ex_3_type_rules.md`, here you formalize the type checker in terms of type rules.
+- `examples/ex_3_type_rules.md`, here you optionally formalize the type checker in terms of type rules.
 
-- `examples/ex_4_type_inference.rs`, you can optionally extend the syntax and type checker allowing type inference of variables.
+- `examples/ex_4_type_inference.rs`, extend the syntax and type checker allowing type inference of variables.
 
-- `examples/ex_5_mut.rs`, you can optionally extend the syntax and type checker with mutability check.
+- `examples/ex_5_mut.rs`, extend the syntax and type checker with mutability check.
 
-- `examples/ex_6_ebnf.md`, put the EBNF for your current syntax here. (Even if you have not extended syntax, you will get another review of your EBNF.)
+- `examples/ex_6.rs`, extend the syntax and type checker allowing for immutable and mutable arrays.
+
+- `examples/ex_7_ebnf.md`, put the EBNF for your current syntax here. (Even if you have not extended syntax, you will get another review of your EBNF.)
+
 
 ---
 
