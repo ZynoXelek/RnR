@@ -20,7 +20,6 @@ The basics of type environments and type checking.
 
 - `examples/ex_7_ebnf.md`, put the EBNF for your current syntax here. (Even if you have not extended syntax, you will get another review of your EBNF.)
 
-
 ---
 
 A well typed program in our Rust in Rust language. (Notice, we don't care about mutability yet.)

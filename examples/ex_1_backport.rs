@@ -70,12 +70,14 @@ fn test_block() {
 #[test]
 fn test_else_if() {
     let ts: proc_macro2::TokenStream = "
-    if false {
-        2;
-    } else if true {
-        3 + 5;
-    } else if false {
-        5;
+    {
+        if false {
+            2;
+        } else if true {
+            3 + 5;
+        } else if false {
+            5;
+        }
     }
     "
     .parse()

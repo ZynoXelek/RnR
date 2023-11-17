@@ -101,7 +101,7 @@ fn peek_precedence<F>(scanner: &mut Scanner, f: F) -> bool
 where
     F: Fn(u8) -> bool,
 {
-    if let Some(ExprItems::Op(op)) = scanner.peek().clone() {
+    if let Some(ExprItems::Op(op)) = scanner.peek() {
         f(op.priority())
     } else {
         false

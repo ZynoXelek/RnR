@@ -32,7 +32,7 @@ fn test_unify() {
 fn test_unify_fail() {
     let t = unify(Type::I32, Type::Bool);
     println!("{:?}", t);
-    assert_eq!(t.is_err(), true);
+    assert!(t.is_err());
 }
 
 // op_types
@@ -117,7 +117,7 @@ fn test_expr_if_then_else() {
     println!("{}", e);
     let mut env = TypeEnv::new();
     env.insert("b".to_string(), Type::Bool);
-    let ty = check_expr(e, &mut env).unwrap();
+    let ty = check_expr(e, &env).unwrap();
     assert_eq!(ty, Type::Bool);
 }
 
@@ -207,7 +207,7 @@ fn test_expr_assign_fail() {
     let mut env = TypeEnv::new();
     env.insert("a".to_string(), Type::I32);
     let ty = check_stmt(e, &mut env);
-    assert_eq!(ty.is_err(), true);
+    assert!(ty.is_err());
 }
 
 #[allow(unused_assignments)]

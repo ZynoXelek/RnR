@@ -189,6 +189,8 @@ fn test_expr_if_then_else() {
 // Added just a reference to how Rust would treat the nesting.
 #[test]
 #[allow(unused_must_use)]
+#[allow(clippy::collapsible_else_if)]
+#[allow(clippy::no_effect)]
 fn test_if_then_else_nested_rust() {
     if false {
         2;
@@ -221,6 +223,7 @@ fn test_if_then_else_nested() {
 // Added just a reference to how Rust would treat the nesting.
 #[test]
 #[allow(unused_must_use)]
+#[allow(clippy::no_effect)]
 fn test_if_then_else_nested_rust2() {
     if false {
         2;
@@ -331,7 +334,7 @@ fn test_type_unit() {
 fn test_type_fail() {
     let ts: proc_macro2::TokenStream = "u32".parse().unwrap();
     let e: Result<Type> = syn::parse2(ts);
-    assert_eq!(e.is_err(), true);
+    assert!(e.is_err());
 }
 
 impl Parse for Statement {
@@ -431,7 +434,8 @@ impl Parse for Block {
         let content;
         let _ = syn::braced!(content in input);
 
-        let bl: Punctuated<Statement, Token![;]> = content.parse_terminated(Statement::parse)?;
+        let bl: Punctuated<Statement, Token![;]> =
+            content.parse_terminated(Statement::parse, Token![;])?;
 
         // We need to retrieve the semi before we collect into a vector
         // as into_iter consumes the value.
@@ -450,7 +454,7 @@ fn test_block_expr_fail() {
     let ts: proc_macro2::TokenStream = "{ let a = }".parse().unwrap();
     let be: Result<Statement> = syn::parse2(ts);
     println!("be {:?}", be);
-    assert_eq!(be.is_err(), true);
+    assert!(be.is_err());
 }
 
 #[test]
@@ -459,7 +463,7 @@ fn test_block1() {
     let bl: Block = syn::parse2(ts).unwrap();
     println!("bl {:?}", bl);
     assert_eq!(bl.statements.len(), 3);
-    assert_eq!(bl.semi, true);
+    assert!(bl.semi);
 }
 
 #[test]
@@ -468,7 +472,7 @@ fn test_block2() {
     let bl: Block = syn::parse2(ts).unwrap();
     println!("bl {:?}", bl);
     assert_eq!(bl.statements.len(), 2);
-    assert_eq!(bl.semi, false);
+    assert!(!bl.semi);
 }
 
 #[test]
@@ -477,5 +481,5 @@ fn test_block_fail() {
     let bl: Result<Block> = syn::parse2(ts);
     println!("bl {:?}", bl);
 
-    assert_eq!(bl.is_err(), true);
+    assert!(bl.is_err());
 }

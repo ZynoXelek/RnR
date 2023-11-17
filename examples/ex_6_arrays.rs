@@ -50,11 +50,10 @@ fn test_array2() {
 
 // Array [T,n] can be initialized, where the n is assigned to all indexes
 #[test]
-fn test_array2() {
+fn test_array() {
     let ts: proc_macro2::TokenStream = "
     {
-        let a = [42; 2];     
-                
+        let a = [42; 2];        
         a[0]               
     }
     "
@@ -73,9 +72,7 @@ fn test_array2() {
     let ts: proc_macro2::TokenStream = "
     {
         let mut a = [42; 2]; 
-
         a[0] = 1337;    
-                
         a[0]               
     }
     "
