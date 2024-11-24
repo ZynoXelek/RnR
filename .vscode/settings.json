@@ -1,7 +1,3 @@
 {
-    "cSpell.ignoreWords": [
-        "EBNF",
-        "backport",
-        "rightarrow"
-    ]
+  "cSpell.ignoreWords": ["EBNF", "backport", "println", "rightarrow"]
 }
