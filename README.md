@@ -89,7 +89,7 @@ Take inspiration from your VM, and start by implementing type checking of litera
 Hint, you may introduce a function `unify`:
 
 ```rust
-fn unify(got: Type, expected: Type) -> Result<Type, Errol> {
+fn unify(got: Type, expected: Type) -> Result<Type, Error> {
     match got == expected {
         true => Ok(expected),
         false => Err(format!("expected type {:?}, got type {:?}", expected, got)),
