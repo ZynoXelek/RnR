@@ -80,7 +80,7 @@ When type checking a function call expression, you need to match each given argu
 
 ## Implementation and workflow
 
-You can choose either to continue working in your Lab3 repository or create a new upstream "e7050e_lab4" (up to you).
+You can choose either to continue working in your Lab3 repository or create a new upstream "d7050e_lab4" (up to you).
 
 Create a new module `type_check.rs` and add that to your library.
 
