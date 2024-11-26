@@ -1,12 +1,15 @@
 [package]
-name = "d7050e_lab4"
-version = "0.1.0"
 edition = "2021"
-
-# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
-
+name = "rnr"
+version = "0.1.0"
 [dependencies]
 indented = "0.1.0"
-proc-macro2 = "1.0.69"
+proc-macro2 = "1.0.70"
 quote = "1.0.33"
-syn = { version = "2.0.39", features = ["full", "extra-traits"] }
+regex = "1.10.2"
+structopt = "0.3.26"
+mips = { git = "https://vesuvio-git.neteq.ltu.se/pln/mips.git" }
+
+[dependencies.syn]
+features = ["full", "extra-traits"]
+version = "2.0.40"
