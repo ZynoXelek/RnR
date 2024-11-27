@@ -162,26 +162,60 @@ mod test_parse_lit {
         assert_eq!(lit, Literal::Array(vec![], 0));
 
         let lit: Literal = parse("[1, 2, 3]");
-        assert_eq!(lit, Literal::Array(vec![Literal::Int(1), Literal::Int(2), Literal::Int(3)], 3));
+        assert_eq!(
+            lit,
+            Literal::Array(vec![Literal::Int(1), Literal::Int(2), Literal::Int(3)], 3)
+        );
 
         let lit: Literal = parse("[1, 2, 3,]");
-        assert_eq!(lit, Literal::Array(vec![Literal::Int(1), Literal::Int(2), Literal::Int(3)], 3));
+        assert_eq!(
+            lit,
+            Literal::Array(vec![Literal::Int(1), Literal::Int(2), Literal::Int(3)], 3)
+        );
 
         let lit: Literal = parse("[2; 1]");
-        assert_eq!(lit, Literal::Array(vec![Literal::Int(1), Literal::Int(1)], 2));
+        assert_eq!(
+            lit,
+            Literal::Array(vec![Literal::Int(1), Literal::Int(1)], 2)
+        );
 
         let lit: Literal = parse("[true, false, true]");
-        assert_eq!(lit, Literal::Array(vec![Literal::Bool(true), Literal::Bool(false), Literal::Bool(true)], 3));
+        assert_eq!(
+            lit,
+            Literal::Array(
+                vec![
+                    Literal::Bool(true),
+                    Literal::Bool(false),
+                    Literal::Bool(true)
+                ],
+                3
+            )
+        );
 
         let lit: Literal = parse("[\"hello\", \"world\"]");
-        assert_eq!(lit, Literal::Array(vec![Literal::String("hello".to_string()), Literal::String("world".to_string())], 2));
+        assert_eq!(
+            lit,
+            Literal::Array(
+                vec![
+                    Literal::String("hello".to_string()),
+                    Literal::String("world".to_string())
+                ],
+                2
+            )
+        );
 
         // recursive
         let lit: Literal = parse("[[1, 2], [3, 4]]");
-        assert_eq!(lit, Literal::Array(vec![
-            Literal::Array(vec![Literal::Int(1), Literal::Int(2)], 2),
-            Literal::Array(vec![Literal::Int(3), Literal::Int(4)], 2)
-        ], 2));
+        assert_eq!(
+            lit,
+            Literal::Array(
+                vec![
+                    Literal::Array(vec![Literal::Int(1), Literal::Int(2)], 2),
+                    Literal::Array(vec![Literal::Int(3), Literal::Int(4)], 2)
+                ],
+                2
+            )
+        );
     }
 
     #[test]
@@ -382,6 +416,12 @@ mod test_parse_expr {
     fn array_access() {
         parse::<Expr>("[1, 2][1]");
         parse::<Expr>("a[2]");
+    }
+
+    #[test]
+    fn ident_followed_by_diff_operator() {
+        parse::<Expr>("a != 2"); //If macros are not correctly implemented, this will fail because it will be parsed as `a!  =  2`
+                                 //Which will be incorrectly interpreted as a macro call with lacking arguments.
     }
 
     #[test]
@@ -710,7 +750,10 @@ mod test_parse_type {
         assert_eq!(typ, Type::Array(Box::new(Type::String), 4));
 
         let typ: Type = parse("[[i32; 2]; 3]");
-        assert_eq!(typ, Type::Array(Box::new(Type::Array(Box::new(Type::I32), 2)), 3));
+        assert_eq!(
+            typ,
+            Type::Array(Box::new(Type::Array(Box::new(Type::I32), 2)), 3)
+        );
     }
 
     #[test]
@@ -938,7 +981,11 @@ mod test_parse_statement {
     fn test_statement_array_assign() {
         let stmt: Statement = parse("a[2] = false");
         let expected = Statement::Assign(
-            Expr::bin_op(BinOp::Get, Expr::Ident("a".to_string()), Expr::Lit(Literal::Int(2))),
+            Expr::bin_op(
+                BinOp::Get,
+                Expr::Ident("a".to_string()),
+                Expr::Lit(Literal::Int(2)),
+            ),
             Expr::Lit(Literal::Bool(false)),
         );
         assert_eq!(stmt, expected);

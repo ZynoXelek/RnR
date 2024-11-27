@@ -2,7 +2,7 @@ use core::fmt;
 use std::collections::HashMap;
 
 use crate::ast::{
-    Arguments, BinOp, Block, Expr, FnDeclaration, Literal, Parameters, Prog, Statement, UnOp, Type,
+    Arguments, BinOp, Block, Expr, FnDeclaration, Literal, Parameters, Prog, Statement, Type, UnOp,
 };
 use crate::common::Eval;
 use crate::error::*;
@@ -132,7 +132,10 @@ impl Val {
         match self {
             Val::Lit(Literal::Bool(b)) => Ok(*b),
             Val::Mut(val) => val.get_bool(),
-            _ => Err(EvalError::invalid_extraction(Type::Bool, Type::from(self.clone()))),
+            _ => Err(EvalError::invalid_extraction(
+                Type::Bool,
+                Type::from(self.clone()),
+            )),
         }
     }
 
@@ -140,7 +143,10 @@ impl Val {
         match self {
             Val::Lit(Literal::Int(i)) => Ok(*i),
             Val::Mut(val) => val.get_int(),
-            _ => Err(EvalError::invalid_extraction(Type::I32, Type::from(self.clone()))),
+            _ => Err(EvalError::invalid_extraction(
+                Type::I32,
+                Type::from(self.clone()),
+            )),
         }
     }
 
@@ -148,7 +154,10 @@ impl Val {
         match self {
             Val::Lit(Literal::String(s)) => Ok(s.clone()),
             Val::Mut(val) => val.get_string(),
-            _ => Err(EvalError::invalid_extraction(Type::String, Type::from(self.clone()))),
+            _ => Err(EvalError::invalid_extraction(
+                Type::String,
+                Type::from(self.clone()),
+            )),
         }
     }
 
@@ -156,7 +165,10 @@ impl Val {
         match self {
             Val::Lit(Literal::Array(arr, size)) => Ok(arr.clone()),
             Val::Mut(val) => val.get_array(),
-            _ => Err(EvalError::invalid_extraction(Type::Array(Box::new(Type::Blank), 0), Type::from(self.clone()))), // Not the best printing...
+            _ => Err(EvalError::invalid_extraction(
+                Type::Array(Box::new(Type::Blank), 0),
+                Type::from(self.clone()),
+            )), // Not the best printing...
         }
     }
 }
@@ -189,37 +201,36 @@ impl BinOp {
         let left_lit = left.get_literal()?;
         let right_lit = right.get_literal()?;
 
-        //TODO: Replace panic with custom Errors?
         match self {
             // Integer operations
             BinOp::Add => match (left_lit, right_lit) {
                 (Literal::Int(l), Literal::Int(r)) => Ok(Val::from(l + r)),
                 (Literal::String(l), Literal::String(r)) => Ok(Val::from(format!("{}{}", l, r))),
-                _ => Err(EvalError::binary_operation_error(*self, left, right))
+                _ => Err(EvalError::binary_operation_error(*self, left, right)),
             },
             BinOp::Sub => match (left_lit, right_lit) {
                 (Literal::Int(l), Literal::Int(r)) => Ok(Val::from(l - r)),
-                _ => Err(EvalError::binary_operation_error(*self, left, right))
+                _ => Err(EvalError::binary_operation_error(*self, left, right)),
             },
             BinOp::Mul => match (left_lit, right_lit) {
                 (Literal::Int(l), Literal::Int(r)) => Ok(Val::from(l * r)),
-                _ => Err(EvalError::binary_operation_error(*self, left, right))
+                _ => Err(EvalError::binary_operation_error(*self, left, right)),
             },
             BinOp::Div => match (left_lit, right_lit) {
                 (Literal::Int(l), Literal::Int(r)) => match r {
                     0 => Err(EvalError::division_by_zero()),
                     _ => Ok(Val::from(l / r)),
                 },
-                _ => Err(EvalError::binary_operation_error(*self, left, right))
+                _ => Err(EvalError::binary_operation_error(*self, left, right)),
             },
             // Boolean operations
             BinOp::And => match (left_lit, right_lit) {
                 (Literal::Bool(l), Literal::Bool(r)) => Ok(Val::from(l && r)),
-                _ => Err(EvalError::binary_operation_error(*self, left, right))
+                _ => Err(EvalError::binary_operation_error(*self, left, right)),
             },
             BinOp::Or => match (left_lit, right_lit) {
                 (Literal::Bool(l), Literal::Bool(r)) => Ok(Val::from(l || r)),
-                _ => Err(EvalError::binary_operation_error(*self, left, right))
+                _ => Err(EvalError::binary_operation_error(*self, left, right)),
             },
             // Comparison operations
             BinOp::Eq => Ok(Val::from(left_lit == right_lit)),
@@ -227,32 +238,32 @@ impl BinOp {
             BinOp::Gt => match (left_lit, right_lit) {
                 (Literal::Int(l), Literal::Int(r)) => Ok(Val::from(l > r)),
                 (Literal::String(l), Literal::String(r)) => Ok(Val::from(l > r)),
-                _ => Err(EvalError::binary_operation_error(*self, left, right))
+                _ => Err(EvalError::binary_operation_error(*self, left, right)),
             },
             BinOp::Lt => match (left_lit, right_lit) {
                 (Literal::Int(l), Literal::Int(r)) => Ok(Val::from(l < r)),
                 (Literal::String(l), Literal::String(r)) => Ok(Val::from(l < r)),
-                _ => Err(EvalError::binary_operation_error(*self, left, right))
+                _ => Err(EvalError::binary_operation_error(*self, left, right)),
             },
             BinOp::Ge => match (left_lit, right_lit) {
                 (Literal::Int(l), Literal::Int(r)) => Ok(Val::from(l >= r)),
                 (Literal::String(l), Literal::String(r)) => Ok(Val::from(l >= r)),
-                _ => Err(EvalError::binary_operation_error(*self, left, right))
+                _ => Err(EvalError::binary_operation_error(*self, left, right)),
             },
             BinOp::Le => match (left_lit, right_lit) {
                 (Literal::Int(l), Literal::Int(r)) => Ok(Val::from(l <= r)),
                 (Literal::String(l), Literal::String(r)) => Ok(Val::from(l <= r)),
-                _ => Err(EvalError::binary_operation_error(*self, left, right))
+                _ => Err(EvalError::binary_operation_error(*self, left, right)),
             },
             // Array operations
             BinOp::Get => match (left_lit, right_lit) {
                 (Literal::Array(arr, size), Literal::Int(i)) => {
                     if i < 0 || i as usize >= size {
-                        return Err(EvalError::index_out_of_bounds(i as usize, size))
+                        return Err(EvalError::index_out_of_bounds(i as usize, size));
                     }
                     Ok(Val::from(arr[i as usize].clone()))
                 }
-                _ => Err(EvalError::binary_operation_error(*self, left, right))
+                _ => Err(EvalError::binary_operation_error(*self, left, right)),
             },
             _ => unimplemented!("BinOp::eval for {:?}", self),
         }
@@ -268,7 +279,6 @@ impl UnOp {
         let operand_clone = operand.clone();
         let operand_lit = operand.get_literal()?;
 
-        //TODO: Replace panic with custom Errors?
         match self {
             UnOp::Neg => match operand_lit {
                 Literal::Int(i) => Ok(Val::from(-i)),
@@ -316,6 +326,11 @@ impl Eval<Val> for Prog {
         for decl in self.0.iter() {
             // Does not support command line arguments for now
             if decl.id == "main" {
+                // Make sure it has no parameters
+                if !decl.parameters.0.is_empty() {
+                    return Err(EvalError::main_with_parameters());
+                }
+
                 return vm.eval_expr(&Expr::Call("main".to_string(), Arguments::new(vec![])));
             }
         }
@@ -401,7 +416,10 @@ impl VM {
             env.insert(name.to_string(), val);
             Ok(())
         } else {
-            Err(EvalError::scope_error(format!("no scope to define variable '{}'", name)))
+            Err(EvalError::scope_error(format!(
+                "no scope to define variable '{}'",
+                name
+            )))
         }
     }
 
@@ -434,10 +452,9 @@ impl VM {
                 let mut array = v.get_array().unwrap();
                 array[index] = val.get_literal().unwrap();
                 self.set_var(name, Val::from(array))?;
-                
-                
+
                 // Returns unit value
-                return Ok(())
+                return Ok(());
             }
         }
         Err(EvalError::variable_not_found(name.to_string()))
@@ -453,7 +470,10 @@ impl VM {
             env.insert(name.to_string(), func.clone());
             Ok(())
         } else {
-            Err(EvalError::scope_error(format!("no scope to define function '{}'", name)))
+            Err(EvalError::scope_error(format!(
+                "no scope to define function '{}'",
+                name
+            )))
         }
     }
 
@@ -467,9 +487,7 @@ impl VM {
     }
 
     fn add_intrinsics(&mut self) {
-        let intrinsic_functions = vec![
-            vm_println(),
-        ];
+        let intrinsic_functions = vec![vm_println()];
 
         for (func, intrinsic) in intrinsic_functions {
             self.define_func(&func).unwrap();
@@ -512,12 +530,14 @@ impl VM {
                 // Add boolean short-circuiting
                 match op {
                     BinOp::And => {
-                        if !left_val.get_bool().unwrap() { // Will not crash since Type will have been checked
+                        if !left_val.get_bool().unwrap() {
+                            // Will not crash since Type will have been checked
                             return Ok(Val::from(false));
                         }
                     }
                     BinOp::Or => {
-                        if left_val.get_bool().unwrap() { // Will not crash since Type will have been checked
+                        if left_val.get_bool().unwrap() {
+                            // Will not crash since Type will have been checked
                             return Ok(Val::from(true));
                         }
                     }
@@ -600,7 +620,7 @@ impl VM {
                         // Type checker will be in charge of verifying the types and the mutability of the variable
                         Ok(Val::from(self.set_var(ident, val)?)) // Returns the assigned value (for blocks)
                     }
-                    
+
                     Expr::BinOp(BinOp::Get, left, right) => {
                         let left_expr = *(left.clone());
                         // Left val should be an array identifier
@@ -613,7 +633,7 @@ impl VM {
                                 // Type checker will be in charge of verifying the types and the mutability of the variable
                                 // Returns a unit value (an array assignment do not return the assigned value in rust)
                                 Ok(Val::from(self.modify_array_value(&ident, index, val)?))
-                            },
+                            }
                             _ => Err(EvalError::expected_identifier(lexpr.clone())),
                         }
                     }
@@ -655,7 +675,7 @@ impl VM {
         for index in 0..size {
             let stmt = &block.statements[index];
             match stmt {
-                Statement::Fn(_) => continue, // Function definitions are already defined in the VM
+                Statement::Fn(_) => continue, // Function are already defined in the VM
                 _ => {
                     if index == size - 1 && !block.semi {
                         // last statement

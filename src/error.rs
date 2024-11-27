@@ -1,7 +1,7 @@
+use crate::ast::{BinOp, Expr, Type, UnOp};
+use crate::vm::Val;
 use core::fmt;
 use syn::Error as SynError;
-use crate::ast::{Type, Expr, BinOp, UnOp};
-use crate::vm::Val;
 
 /// By default, Error is just a string.
 /// If you want to implement some nicer and more elaborate error handling, you
@@ -131,11 +131,15 @@ pub enum ParsingError {
     UnexpectedEndOfBlock {
         input_context: String,
         parsing_context: ParsingContext,
-    }
+    },
 }
 
 impl ParsingError {
-    pub fn invalid_token(token: String, input_context: String, parsing_context: ParsingContext) -> Self {
+    pub fn invalid_token(
+        token: String,
+        input_context: String,
+        parsing_context: ParsingContext,
+    ) -> Self {
         ParsingError::InvalidToken {
             token,
             input_context,
@@ -143,7 +147,12 @@ impl ParsingError {
         }
     }
 
-    pub fn expected_token(expected: String, found: String, input_context: String, parsing_context: ParsingContext) -> Self {
+    pub fn expected_token(
+        expected: String,
+        found: String,
+        input_context: String,
+        parsing_context: ParsingContext,
+    ) -> Self {
         ParsingError::ExpectedToken {
             expected,
             found,
@@ -186,24 +195,33 @@ impl From<ParsingError> for SynError {
         let message = &err.to_string();
         match err {
             //TODO: Add location information, or better use of tokens span
-            ParsingError::InvalidToken { token, input_context, parsing_context } => {
-                SynError::new_spanned(input_context, message)
-            },
-            ParsingError::ExpectedToken { expected, found, input_context, parsing_context } => {
-                SynError::new_spanned(input_context, message)
-            },
-            ParsingError::UnexpectedEOF { input_context, parsing_context } => {
-                SynError::new_spanned(input_context, message)
-            },
-            ParsingError::ChainedComparisons { input_context, parsing_context } => {
-                SynError::new_spanned(input_context, message)
-            },
-            ParsingError::InvalidTypename { input_context, parsing_context } => {
-                SynError::new_spanned(input_context, message)
-            },
-            ParsingError::UnexpectedEndOfBlock { input_context, parsing_context } => {
-                SynError::new_spanned(input_context, message)
-            }
+            ParsingError::InvalidToken {
+                token,
+                input_context,
+                parsing_context,
+            } => SynError::new_spanned(input_context, message),
+            ParsingError::ExpectedToken {
+                expected,
+                found,
+                input_context,
+                parsing_context,
+            } => SynError::new_spanned(input_context, message),
+            ParsingError::UnexpectedEOF {
+                input_context,
+                parsing_context,
+            } => SynError::new_spanned(input_context, message),
+            ParsingError::ChainedComparisons {
+                input_context,
+                parsing_context,
+            } => SynError::new_spanned(input_context, message),
+            ParsingError::InvalidTypename {
+                input_context,
+                parsing_context,
+            } => SynError::new_spanned(input_context, message),
+            ParsingError::UnexpectedEndOfBlock {
+                input_context,
+                parsing_context,
+            } => SynError::new_spanned(input_context, message),
         }
     }
 }
@@ -212,23 +230,68 @@ impl fmt::Display for ParsingError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "Parsing error: ")?;
         match self {
-            ParsingError::InvalidToken { token, input_context, parsing_context } => {
-                write!(f, "Invalid token '{}' in '{}' during {} parsing", token, input_context, parsing_context)
-            },
-            ParsingError::ExpectedToken { expected, found, input_context, parsing_context } => {
-                write!(f, "Expected token '{}' in '{}' during {} parsing, found '{}'", expected, input_context, parsing_context, found)
-            },
-            ParsingError::UnexpectedEOF { input_context, parsing_context } => {
-                write!(f, "Unexpected EOF in '{}' during {} parsing", input_context, parsing_context)
-            },
-            ParsingError::ChainedComparisons { input_context, parsing_context } => {
-                write!(f, "Chained comparisons in '{}' during {} parsing", input_context, parsing_context)
-            },
-            ParsingError::InvalidTypename { input_context, parsing_context } => {
-                write!(f, "Invalid typename in '{}' during {} parsing", input_context, parsing_context)
-            },
-            ParsingError::UnexpectedEndOfBlock { input_context, parsing_context } => {
-                write!(f, "Unexpected end of block in '{}' during {} parsing", input_context, parsing_context)
+            ParsingError::InvalidToken {
+                token,
+                input_context,
+                parsing_context,
+            } => {
+                write!(
+                    f,
+                    "Invalid token '{}' in '{}' during {} parsing",
+                    token, input_context, parsing_context
+                )
+            }
+            ParsingError::ExpectedToken {
+                expected,
+                found,
+                input_context,
+                parsing_context,
+            } => {
+                write!(
+                    f,
+                    "Expected token '{}' in '{}' during {} parsing, found '{}'",
+                    expected, input_context, parsing_context, found
+                )
+            }
+            ParsingError::UnexpectedEOF {
+                input_context,
+                parsing_context,
+            } => {
+                write!(
+                    f,
+                    "Unexpected EOF in '{}' during {} parsing",
+                    input_context, parsing_context
+                )
+            }
+            ParsingError::ChainedComparisons {
+                input_context,
+                parsing_context,
+            } => {
+                write!(
+                    f,
+                    "Chained comparisons in '{}' during {} parsing",
+                    input_context, parsing_context
+                )
+            }
+            ParsingError::InvalidTypename {
+                input_context,
+                parsing_context,
+            } => {
+                write!(
+                    f,
+                    "Invalid typename in '{}' during {} parsing",
+                    input_context, parsing_context
+                )
+            }
+            ParsingError::UnexpectedEndOfBlock {
+                input_context,
+                parsing_context,
+            } => {
+                write!(
+                    f,
+                    "Unexpected end of block in '{}' during {} parsing",
+                    input_context, parsing_context
+                )
             }
         }
     }
@@ -244,6 +307,7 @@ pub enum EvalError {
     },
     Uninit,
     MainNotFound,
+    MainWithParameters,
     ScopeError {
         message: String,
     },
@@ -291,57 +355,38 @@ impl EvalError {
     pub fn main_not_found() -> Self {
         EvalError::MainNotFound
     }
+    pub fn main_with_parameters() -> Self {
+        EvalError::MainWithParameters
+    }
     pub fn scope_error(message: String) -> Self {
-        EvalError::ScopeError {
-            message,
-        }
+        EvalError::ScopeError { message }
     }
     pub fn variable_not_found(name: String) -> Self {
-        EvalError::VariableNotFound {
-            name,
-        }
+        EvalError::VariableNotFound { name }
     }
     pub fn function_not_found(name: String) -> Self {
-        EvalError::FunctionNotFound {
-            name,
-        }
+        EvalError::FunctionNotFound { name }
     }
     pub fn function_already_defined(name: String) -> Self {
-        EvalError::FunctionAlreadyDefined {
-            name,
-        }
+        EvalError::FunctionAlreadyDefined { name }
     }
     pub fn assignment_error(expr: Expr) -> Self {
-        EvalError::AssignmentError {
-            expr,
-        }
+        EvalError::AssignmentError { expr }
     }
     pub fn expected_identifier(found: Expr) -> Self {
-        EvalError::ExpectedIdentifier {
-            found,
-        }
+        EvalError::ExpectedIdentifier { found }
     }
     pub fn binary_operation_error(op: BinOp, left: Val, right: Val) -> Self {
-        EvalError::BinaryOperationError {
-            op,
-            left,
-            right,
-        }
+        EvalError::BinaryOperationError { op, left, right }
     }
     pub fn unary_operation_error(op: UnOp, operand: Val) -> Self {
-        EvalError::UnaryOperationError {
-            op,
-            operand,
-        }
+        EvalError::UnaryOperationError { op, operand }
     }
     pub fn division_by_zero() -> Self {
         EvalError::DivisionByZero
     }
     pub fn index_out_of_bounds(index: usize, size: usize) -> Self {
-        EvalError::IndexOutOfBounds {
-            index,
-            size,
-        }
+        EvalError::IndexOutOfBounds { index, size }
     }
 }
 
@@ -350,45 +395,25 @@ impl From<EvalError> for SynError {
         let message = err.to_string();
         match err {
             //TODO: Add location information, or better use of tokens span
-            EvalError::InvalidExtraction { expected_type, found_type } => {
-                SynError::new_spanned("", message)
-            }
-            EvalError::Uninit => {
-                SynError::new_spanned("", message)
-            }
-            EvalError::MainNotFound => {
-                SynError::new_spanned("", message)
-            }
-            EvalError::ScopeError { message } => {
-                SynError::new_spanned("", message)
-            }
-            EvalError::VariableNotFound { name } => {
-                SynError::new_spanned("", message)
-            }
-            EvalError::FunctionNotFound { name } => {
-                SynError::new_spanned("", message)
-            }
-            EvalError::FunctionAlreadyDefined { name } => {
-                SynError::new_spanned("", message)
-            }
-            EvalError::AssignmentError { expr } => {
-                SynError::new_spanned("", message)
-            }
-            EvalError::ExpectedIdentifier { found } => {
-                SynError::new_spanned("", message)
-            }
+            EvalError::InvalidExtraction {
+                expected_type,
+                found_type,
+            } => SynError::new_spanned("", message),
+            EvalError::Uninit => SynError::new_spanned("", message),
+            EvalError::MainNotFound => SynError::new_spanned("", message),
+            EvalError::MainWithParameters => SynError::new_spanned("", message),
+            EvalError::ScopeError { message } => SynError::new_spanned("", message),
+            EvalError::VariableNotFound { name } => SynError::new_spanned("", message),
+            EvalError::FunctionNotFound { name } => SynError::new_spanned("", message),
+            EvalError::FunctionAlreadyDefined { name } => SynError::new_spanned("", message),
+            EvalError::AssignmentError { expr } => SynError::new_spanned("", message),
+            EvalError::ExpectedIdentifier { found } => SynError::new_spanned("", message),
             EvalError::BinaryOperationError { op, left, right } => {
                 SynError::new_spanned("", message)
             }
-            EvalError::UnaryOperationError { op, operand } => {
-                SynError::new_spanned("", message)
-            }
-            EvalError::DivisionByZero => {
-                SynError::new_spanned("", message)
-            }
-            EvalError::IndexOutOfBounds { index, size } => {
-                SynError::new_spanned("", message)
-            }
+            EvalError::UnaryOperationError { op, operand } => SynError::new_spanned("", message),
+            EvalError::DivisionByZero => SynError::new_spanned("", message),
+            EvalError::IndexOutOfBounds { index, size } => SynError::new_spanned("", message),
         }
     }
 }
@@ -397,14 +422,24 @@ impl fmt::Display for EvalError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "Evaluation error: ")?;
         match self {
-            EvalError::InvalidExtraction { expected_type, found_type } => {
-                write!(f, "Invalid extraction: expected type '{}', found type '{}'", expected_type, found_type)
+            EvalError::InvalidExtraction {
+                expected_type,
+                found_type,
+            } => {
+                write!(
+                    f,
+                    "Invalid extraction: expected type '{}', found type '{}'",
+                    expected_type, found_type
+                )
             }
             EvalError::Uninit => {
                 write!(f, "Uninitialized value error")
             }
             EvalError::MainNotFound => {
                 write!(f, "Main function not found in program")
+            }
+            EvalError::MainWithParameters => {
+                write!(f, "Main function should not have any parameters")
             }
             EvalError::ScopeError { message } => {
                 write!(f, "Scope error: {}", message)
@@ -425,16 +460,28 @@ impl fmt::Display for EvalError {
                 write!(f, "Expected identifier, found '{}'", found)
             }
             EvalError::BinaryOperationError { op, left, right } => {
-                write!(f, "Binary operation error: invalid operation '{}' between '{}' and '{}'", op, left, right)
+                write!(
+                    f,
+                    "Binary operation error: invalid operation '{}' between '{}' and '{}'",
+                    op, left, right
+                )
             }
             EvalError::UnaryOperationError { op, operand } => {
-                write!(f, "Unary operation error: invalid operation '{}' on '{}'", op, operand)
+                write!(
+                    f,
+                    "Unary operation error: invalid operation '{}' on '{}'",
+                    op, operand
+                )
             }
             EvalError::DivisionByZero => {
                 write!(f, "Division by zero error")
             }
             EvalError::IndexOutOfBounds { index, size } => {
-                write!(f, "Index out of bounds: index '{}' out of size '{}'", index, size)
+                write!(
+                    f,
+                    "Index out of bounds: index '{}' out of size '{}'",
+                    index, size
+                )
             }
         }
     }

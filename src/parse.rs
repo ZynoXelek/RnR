@@ -1,11 +1,14 @@
-use crate::{ast::{
-    Arguments, BinOp, Block, Expr, FnDeclaration, Literal, Mutable, Parameter, Parameters, Prog,
-    Statement, Type, UnOp,
-}, error::*};
+use crate::{
+    ast::{
+        Arguments, BinOp, Block, Expr, FnDeclaration, Literal, Mutable, Parameter, Parameters,
+        Prog, Statement, Type, UnOp,
+    },
+    error::*,
+};
 
 use syn::{
     parse::{Parse, ParseStream},
-    Result, Error as SynError, Token,
+    Error as SynError, Result, Token,
 };
 
 use proc_macro2::TokenStream;
@@ -89,14 +92,20 @@ impl Parse for Literal {
                     let lit: Literal = content.parse()?;
                     literals.push(lit);
                     size += 1;
-    
+
                     // If there is a comma, we consume it
                     if content.peek(Token![,]) {
                         let _: Token![,] = content.parse()?;
                     } else if !content.is_empty() {
                         // Wrong parsing, the array have several elements not separated by commas
                         let next_token = content.parse::<TokenStream>().unwrap().to_string();
-                        return Err(ParsingError::expected_token(",".to_string(), next_token, input_str, ParsingContext::Literal).into());
+                        return Err(ParsingError::expected_token(
+                            ",".to_string(),
+                            next_token,
+                            input_str,
+                            ParsingContext::Literal,
+                        )
+                        .into());
                     }
                 }
             }
@@ -171,8 +180,7 @@ impl Parse for BinOp {
             // This is an array access -> a[i]
             // Do not consume the token. Since it is a peculiar case, it will be handled by the binary expr parser
             Ok(BinOp::Get)
-        }
-        else if input.cursor().eof() {
+        } else if input.cursor().eof() {
             // No more tokens to parse
             Err(ParsingError::unexpected_eof(input_str, ParsingContext::BinOp).into())
         } else {
@@ -222,8 +230,8 @@ impl Parse for Expr {
 
         // Parse the first part of the expression.
         let left = parse_operand(input)?; //? Can parse literals, identifiers, parentheses, unary ops, function calls,
-                                                //? blocks and if-then-else expressions
-                                                // Now check if the rest is a BinOp Expr...
+                                          //? blocks and if-then-else expressions
+                                          // Now check if the rest is a BinOp Expr...
         if peek_binop(input) {
             // In that case, we have to parse the rest of the expression.
             parse_binary_op_expr(input, left, 0) //? Can parse binary ops
@@ -271,7 +279,13 @@ fn parse_array_access(input: ParseStream) -> Result<(BinOp, Expr)> {
         Ok((BinOp::Get, index))
     } else {
         let next_token = input.parse::<TokenStream>().unwrap().to_string();
-        Err(ParsingError::expected_token("[".to_string(), next_token, input_str, ParsingContext::Expr).into())
+        Err(ParsingError::expected_token(
+            "[".to_string(),
+            next_token,
+            input_str,
+            ParsingContext::Expr,
+        )
+        .into())
     }
 }
 
@@ -393,7 +407,11 @@ fn parse_binary_op_expr(input: ParseStream, left: Expr, min_prio: u8) -> Result<
     if binop.is_comparison() {
         // We only have to check the left side since the right side will be recursively checked.
         if left.is_comparison() {
-            return Err(ParsingError::chained_comparisons(input_str, ParsingContext::BinaryOperation).into());
+            return Err(ParsingError::chained_comparisons(
+                input_str,
+                ParsingContext::BinaryOperation,
+            )
+            .into());
         }
     }
 
@@ -431,7 +449,10 @@ fn parse_binary_op_expr(input: ParseStream, left: Expr, min_prio: u8) -> Result<
         eprintln!("Left: {:?}", left);
         eprintln!("Right: {:?}", right);
         eprintln!("Priority: {:?} and Min Priority: {:?}", prio, min_prio);
-        Err(ParsingError::invalid_token(next_token, input_str, ParsingContext::BinaryOperation).into())
+        Err(
+            ParsingError::invalid_token(next_token, input_str, ParsingContext::BinaryOperation)
+                .into(),
+        )
     }
 }
 
@@ -449,7 +470,9 @@ fn parse_ident_or_call(input: ParseStream) -> Result<Expr> {
         let mut id = id.to_string();
 
         // Check if we find parentheses after the identifier (or a ! for macros)
-        if input.peek(syn::token::Paren) || input.peek(Token![!]) {
+        if input.peek(syn::token::Paren)
+            || (input.peek(Token![!]) && input.peek2(syn::token::Paren))
+        {
             // This is a function call
 
             // Simulate macro-rules by checking if the next token is a '!'
@@ -528,7 +551,13 @@ impl Parse for IfThenOptElse {
             Ok(IfThenOptElse(cond, then_block, else_block))
         } else {
             let next_token = input.parse::<TokenStream>().unwrap().to_string();
-            Err(ParsingError::expected_token("if".to_string(), next_token, input_str, ParsingContext::IfThenElse).into())
+            Err(ParsingError::expected_token(
+                "if".to_string(),
+                next_token,
+                input_str,
+                ParsingContext::IfThenElse,
+            )
+            .into())
         }
     }
 }
@@ -650,7 +679,13 @@ impl Parse for Arguments {
         } else {
             // This is not a valid argument list
             let next_token = input.parse::<TokenStream>().unwrap().to_string();
-            Err(ParsingError::expected_token("(".to_string(), next_token, input_str, ParsingContext::Arguments).into())
+            Err(ParsingError::expected_token(
+                "(".to_string(),
+                next_token,
+                input_str,
+                ParsingContext::Arguments,
+            )
+            .into())
         }
     }
 }
@@ -691,11 +726,23 @@ impl Parse for Parameter {
                 Ok(Parameter::new(mutable, id, ty))
             } else {
                 let next_token = input.parse::<TokenStream>().unwrap().to_string();
-                Err(ParsingError::expected_token(":".to_string(), next_token, input_str, ParsingContext::Parameter).into())
+                Err(ParsingError::expected_token(
+                    ":".to_string(),
+                    next_token,
+                    input_str,
+                    ParsingContext::Parameter,
+                )
+                .into())
             }
         } else {
             let next_token = input.parse::<TokenStream>().unwrap().to_string();
-            Err(ParsingError::expected_token("identifier".to_string(), next_token, input_str, ParsingContext::Parameter).into())
+            Err(ParsingError::expected_token(
+                "identifier".to_string(),
+                next_token,
+                input_str,
+                ParsingContext::Parameter,
+            )
+            .into())
         }
     }
 }
@@ -735,7 +782,13 @@ impl Parse for Parameters {
             Ok(Parameters::new(params))
         } else {
             let next_token = input.parse::<TokenStream>().unwrap().to_string();
-            Err(ParsingError::expected_token("(".to_string(), next_token, input_str, ParsingContext::Parameters).into())
+            Err(ParsingError::expected_token(
+                "(".to_string(),
+                next_token,
+                input_str,
+                ParsingContext::Parameters,
+            )
+            .into())
         }
     }
 }
@@ -785,7 +838,13 @@ impl Parse for FnDeclaration {
             Ok(FnDeclaration::new(id, params, ty, body))
         } else {
             let next_token = input.parse::<TokenStream>().unwrap().to_string();
-            Err(ParsingError::expected_token("fn".to_string(), next_token, input_str, ParsingContext::FnDeclaration).into())
+            Err(ParsingError::expected_token(
+                "fn".to_string(),
+                next_token,
+                input_str,
+                ParsingContext::FnDeclaration,
+            )
+            .into())
         }
     }
 }
@@ -834,7 +893,10 @@ impl Parse for Statement {
                 eprintln!("Input: {:?}", input);
                 eprintln!("Next token: {:?}", next_token);
                 eprintln!("Expr: {:?}", expr);
-                Err(ParsingError::invalid_token(next_token, input_str, ParsingContext::Statement).into())
+                Err(
+                    ParsingError::invalid_token(next_token, input_str, ParsingContext::Statement)
+                        .into(),
+                )
             }
         }
     }
@@ -888,7 +950,13 @@ fn parse_let_binding(input: ParseStream) -> Result<Statement> {
         Ok(Statement::Let(mutable, id, ty, expr))
     } else {
         let next_token = input.parse::<TokenStream>().unwrap().to_string();
-        Err(ParsingError::expected_token("let".to_string(), next_token, input_str, ParsingContext::Statement).into())
+        Err(ParsingError::expected_token(
+            "let".to_string(),
+            next_token,
+            input_str,
+            ParsingContext::Statement,
+        )
+        .into())
     }
 }
 
@@ -910,7 +978,13 @@ fn parse_while_loops(input: ParseStream) -> Result<Statement> {
         Ok(Statement::While(cond, block))
     } else {
         let next_token = input.parse::<TokenStream>().unwrap().to_string();
-        Err(ParsingError::expected_token("while".to_string(), next_token, input_str, ParsingContext::Statement).into())
+        Err(ParsingError::expected_token(
+            "while".to_string(),
+            next_token,
+            input_str,
+            ParsingContext::Statement,
+        )
+        .into())
     }
 }
 
@@ -987,17 +1061,29 @@ impl Parse for Block {
                     Ok(Block::new(statements, semi))
                 } else {
                     // Invalid termination of block
-                    Err(ParsingError::unexpected_end_of_block(input_str, ParsingContext::Block).into())
+                    Err(
+                        ParsingError::unexpected_end_of_block(input_str, ParsingContext::Block)
+                            .into(),
+                    )
                 }
             } else {
                 // Expected semi-colon but found something else
                 let next_token = content.parse::<TokenStream>().unwrap().to_string();
-                Err(ParsingError::invalid_token(next_token, input_str, ParsingContext::Block).into())
+                Err(
+                    ParsingError::invalid_token(next_token, input_str, ParsingContext::Block)
+                        .into(),
+                )
             }
         } else {
             // Expected braces but found something else
             let next_token = input.parse::<TokenStream>().unwrap().to_string();
-            Err(ParsingError::expected_token("{".to_string(), next_token, input_str, ParsingContext::Block).into())
+            Err(ParsingError::expected_token(
+                "{".to_string(),
+                next_token,
+                input_str,
+                ParsingContext::Block,
+            )
+            .into())
         }
     }
 }

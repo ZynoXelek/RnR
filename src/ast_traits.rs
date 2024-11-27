@@ -208,7 +208,7 @@ impl Literal {
 
     pub fn get_array(&self) -> Vec<Literal> {
         match self {
-            Literal::Array(arr,size) => arr.clone(),
+            Literal::Array(arr, size) => arr.clone(),
             _ => panic!("cannot get array from {:?}", self),
         }
     }
@@ -309,26 +309,28 @@ impl Expr {
         match self {
             Expr::Ident(id) => expr_repr.push_str(&format!("{}", id)),
             Expr::Lit(l) => expr_repr.push_str(&format!("{}", l)),
-            Expr::BinOp(op, left, right) => {
-                match op {
-                    BinOp::Get => {
-                        expr_repr.push_str(&format!("{}[{}]", left, right));
-                    },
-                    _ => {
-                        expr_repr.push_str(&format!("{} {} {}", left, op, right))
-                    }
+            Expr::BinOp(op, left, right) => match op {
+                BinOp::Get => {
+                    expr_repr.push_str(&format!("{}[{}]", left, right));
                 }
+                _ => expr_repr.push_str(&format!("{} {} {}", left, op, right)),
             },
             Expr::UnOp(op, operand) => expr_repr.push_str(&format!("{}{}", op, operand)),
             Expr::Par(e) => expr_repr.push_str(&format!("({})", e)),
             Expr::Call(id, args) => expr_repr.push_str(&format!("{}{}", id, args)),
             Expr::IfThenElse(cond, then_block, else_block) => {
-                expr_repr.push_str(&format!("if {} {}", cond, then_block.get_string_repr(indent)));
+                expr_repr.push_str(&format!(
+                    "if {} {}",
+                    cond,
+                    then_block.get_string_repr(indent)
+                ));
                 if let Some(else_block) = else_block {
                     expr_repr.push_str(&format!(" else {}", else_block.get_string_repr(indent)));
                 }
             }
-            Expr::Block(block) => expr_repr.push_str(&format!("{}", block.get_string_repr(indent + 1))),
+            Expr::Block(block) => {
+                expr_repr.push_str(&format!("{}", block.get_string_repr(indent + 1)))
+            }
             _ => unimplemented!("Expr::fmt for {:?}", self),
         }
 
@@ -511,7 +513,11 @@ impl Statement {
                 stmt_repr.push_str(&format!("{} = {}", left, right));
             }
             Statement::While(condition, block) => {
-                stmt_repr.push_str(&format!("while {} {}", condition, block.get_string_repr(indent)));
+                stmt_repr.push_str(&format!(
+                    "while {} {}",
+                    condition,
+                    block.get_string_repr(indent)
+                ));
             }
             Statement::Expr(expr) => {
                 stmt_repr.push_str(&format!("{}", expr.get_string_repr(indent)));
@@ -581,7 +587,10 @@ impl Block {
 
         block_repr.push_str(&"{\n");
         for index in 0..self.statements.len() {
-            block_repr.push_str(&format!("{}", self.statements[index].get_string_repr(indent + 1)));
+            block_repr.push_str(&format!(
+                "{}",
+                self.statements[index].get_string_repr(indent + 1)
+            ));
             if index < self.statements.len() - 1 || self.semi {
                 block_repr.push_str(&";");
             }
