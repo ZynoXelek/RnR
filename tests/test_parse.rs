@@ -173,7 +173,7 @@ mod test_parse_lit {
             Literal::Array(vec![Literal::Int(1), Literal::Int(2), Literal::Int(3)], 3)
         );
 
-        let lit: Literal = parse("[2; 1]");
+        let lit: Literal = parse("[1; 2]");
         assert_eq!(
             lit,
             Literal::Array(vec![Literal::Int(1), Literal::Int(1)], 2)

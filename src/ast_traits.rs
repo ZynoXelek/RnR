@@ -9,7 +9,7 @@ use std::fmt;
 
 const TAB: &str = "    "; // Can be "\t" or "    " (4 spaces, it looks better in the terminal)
 
-fn get_tabs(nb_tabs: u16) -> String {
+fn get_tabs(nb_tabs: usize) -> String {
     let mut tabs = String::new();
     for _ in 0..nb_tabs {
         tabs.push_str(TAB);
@@ -94,7 +94,7 @@ impl fmt::Display for Type {
             Type::String => write!(f, "String"),
             Type::Unit => write!(f, "()"),
             Type::Array(ty, size) => write!(f, "[{}; {}]", ty, size),
-            Type::Blank => write!(f, "_"),
+            Type::GenericArray => write!(f, "[_; _]"), // Not for use, only for display
             _ => unimplemented!("Type::fmt for {:?}", self),
         }
     }
@@ -297,7 +297,7 @@ impl Expr {
         }
     }
 
-    fn get_string_repr(&self, indent: u16) -> String {
+    fn get_string_repr(&self, indent: usize) -> String {
         // Gets the string representation of the expression with the desired number of tabs
         let mut s = String::new();
         let tabs = get_tabs(indent);
@@ -466,7 +466,7 @@ impl fmt::Display for Mutable {
 
 impl Statement {
     // This function is used to check if a statement requires a semi colon at the end of its line or not
-    // If the statement is the last one of a block, it ignores this function as no legal termination statement requires a semi colon
+    // If the statement is the last one of a block, it ignores this function and uses the next one
     pub fn requires_semi_colon(&self) -> bool {
         match self {
             Statement::Let(_, _, _, _) => true,
@@ -478,7 +478,7 @@ impl Statement {
         }
     }
 
-    // This function is used to check if a statement can be the last statement of a block
+    // This function is used to check if a statement can be the last statement of a block without a semi colon
     pub fn can_terminate_block(&self) -> bool {
         match self {
             Statement::Let(_, _, _, _) => false, // Only 'let' statements cannot be the last statement of a block
@@ -490,7 +490,7 @@ impl Statement {
         }
     }
 
-    fn get_string_repr(&self, indent: u16) -> String {
+    fn get_string_repr(&self, indent: usize) -> String {
         // Gets the string representation of the statement with the desired number of tabs
         let mut s = String::new();
         let tabs = get_tabs(indent);
@@ -574,7 +574,7 @@ impl Block {
         self.statements.is_empty() || self.semi // A block is of unit type if it is empty or ends with a semi colon
     }
 
-    fn get_string_repr(&self, indent: u16) -> String {
+    fn get_string_repr(&self, indent: usize) -> String {
         // Gets the string representation of the block with the desired number of tabs
 
         let mut s = String::new();
@@ -698,8 +698,18 @@ impl FnDeclaration {
         }
     }
 
-    fn get_string_repr(&self, indent: u16) -> String {
-        // Gets the string representation of the function declaration with the desired number of tabs
+    // Helper method to easily get the return type of the function
+    pub fn get_return_type(&self) -> Type {
+        if let Some(t) = &self.ty {
+            t.clone()
+        } else {
+            Type::Unit
+        }
+    }
+
+    // When we just want to display its signature, not the whole function
+    pub fn get_signature_repr(&self, indent: usize) -> String {
+        // Gets the string representation of the signature of the function declaration with the desired number of tabs
         let mut s = String::new();
         let tabs = get_tabs(indent);
 
@@ -711,11 +721,19 @@ impl FnDeclaration {
         if let Some(t) = &self.ty {
             fn_repr.push_str(&format!(" -> {}", t));
         }
-        fn_repr.push_str(&format!(" {}", self.body.get_string_repr(indent)));
 
         s.push_str(&fn_repr);
 
         s
+    }
+
+    fn get_string_repr(&self, indent: usize) -> String {
+        // Gets the string representation of the function declaration with the desired number of tabs
+
+        let mut fn_repr = self.get_signature_repr(indent);
+        fn_repr.push_str(&format!(" {}", self.body.get_string_repr(indent)));
+
+        fn_repr
     }
 }
 

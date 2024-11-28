@@ -453,6 +453,25 @@ fn block_return_on_array_assignment() {
 }
 
 #[test]
+fn block_array_alternative_def() {
+    test_block!({
+        let mut a = [6; 2]; // a == [6, 6]
+        a[0] = 4;
+        a[1]
+    });
+}
+
+#[test]
+fn block_array_alternative_def_with_expr() {
+    test_block!({
+        // It can only use constants, not variables during expression.
+        let mut a = [5+1; 10/4]; // This should be [6; 2], so a == [6, 6]
+        a[0] = 4;
+        a[1]
+    });
+}
+
+#[test]
 #[allow(unused)]
 fn block_if_then_else_shadowing() {
     test_block!({

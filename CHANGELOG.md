@@ -37,8 +37,19 @@ YOUR CHANGES/ADDED FEATURES HERE
 - Add size data to arrays. For now, it is still using `Vec<Literal>` for convenience, but may be changed later?
 - Add arrays to EBNF (May need to improve it later)
 
+## 2024-11-27
+
+- Fix array special definition, which was in the wrong order. Correct order is `[init; len]`. Need to add support for expr later on.
+
+## 2024-11-29
+
+- Implement Type VM for most cases, from basic `Expr` to entire `Prog`. It has array support in a similar way as the eval VM. Still need to add more tests and support nicely intrinsics.
+
 ## TODO
 
+- Add more type tests
+- Add better support for intrinsics in type check
+- Add support for CONSTANT expression in array size, and any non unit type expression in the init value during array definition.
 - May want to add usize type for indexing (would be useful for ranges as well). May need to add "as" keyword then to convert i32 to usize.
 - Add return statement to be able to return from a while.
 - Similarly, add break statement.

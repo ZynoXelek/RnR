@@ -1,4 +1,4 @@
-use crate::ast::{BinOp, Expr, Type, UnOp};
+use crate::ast::{BinOp, Expr, FnDeclaration, Parameter, Type, UnOp};
 use crate::vm::Val;
 use core::fmt;
 use syn::Error as SynError;
@@ -7,6 +7,12 @@ use syn::Error as SynError;
 /// If you want to implement some nicer and more elaborate error handling, you
 /// can map `Error` to some other type.
 pub type Error = String;
+
+//?#################################################################################################
+//?#                                                                                               #
+//?#                                        Parsing Errors                                         #
+//?#                                                                                               #
+//?#################################################################################################
 
 //? ---------------- Parsing Context ----------------
 
@@ -190,6 +196,7 @@ impl ParsingError {
     }
 }
 
+// Needed to convert ParsingError to SynError in parse.rs
 impl From<ParsingError> for SynError {
     fn from(err: ParsingError) -> Self {
         let message = &err.to_string();
@@ -297,7 +304,387 @@ impl fmt::Display for ParsingError {
     }
 }
 
-//? ---------------- Evaluation Error ----------------
+//?#################################################################################################
+//?#                                                                                               #
+//?#                                         Type Errors                                           #
+//?#                                                                                               #
+//?#################################################################################################
+
+#[derive(Debug, Clone, PartialEq)]
+pub enum TypeError {
+    InvalidType {
+        expected: Type,
+        found: Type,
+    },
+    UninitializedVariable {
+        expr: Expr, // Should be an identifier (nothing else can produce this error)
+    },
+    MainNotFound,
+    MainWithParameters,
+    MainWithInvalidType { // In Rust, a main function should return either () or Result<(), E>, where E implements the std::error::Error trait.
+        found: Type,
+    },
+    BinOpTypeMismatch {
+        op: BinOp,
+        left: Type,
+        right: Type,
+    },
+    UnOpTypeMismatch {
+        op: UnOp,
+        operand: Type,
+    },
+    ScopeError {
+        message: String,
+    },
+    VariableNotFound {
+        name: String,
+    },
+    FunctionNotFound {
+        name: String,
+    },
+    FunctionAlreadyDefined {
+        name: String,
+    },
+    InvalidNumberOfArguments {
+        func: FnDeclaration,
+        expected: usize,
+        found: usize,
+    },
+    InvalidArgument {
+        func: FnDeclaration,
+        parameter: Parameter,
+        expected: Type,
+        found: Type,
+    },
+    InvalidFunctionReturnType {
+        func: FnDeclaration,
+        expected: Type,
+        found: Type,
+    },
+    InvalidIfCondition {
+        expr: Expr,
+        found: Type,
+    },
+    IfBlocksTypeMismatch {
+        then_type: Type,
+        else_type: Type,
+    },
+    MissingVariableType {
+        name: String,
+    },
+    LetTypeMismatch {
+        name: String,
+        expr: Expr,
+        expected: Type,
+        found: Type,
+    },
+    AssignmentInvalidLeftExpr {
+        // When the left expression is not a mutable or uninitialized variable
+        expr: Expr,
+    },
+    AssignmentTypeMismatch {
+        // When the right expression is of the wrong type
+        expr: Expr,
+        expected: Type,
+        found: Type,
+    },
+    ArrayInvalidIndex {
+        // When the index is not an integer
+        index: Expr,
+        found: Type,
+    },
+    InvalidWhileCondition {
+        expr: Expr,
+        found: Type,
+    },
+    WhileBlockTypeMismatch {
+        block_type: Type,
+    },
+}
+
+impl TypeError {
+    pub fn invalid_type(expected: Type, found: Type) -> Self {
+        TypeError::InvalidType { expected, found }
+    }
+
+    pub fn uninitialized_variable(expr: Expr) -> Self {
+        TypeError::UninitializedVariable { expr }
+    }
+
+    pub fn main_not_found() -> Self {
+        TypeError::MainNotFound
+    }
+
+    pub fn main_with_parameters() -> Self {
+        TypeError::MainWithParameters
+    }
+
+    pub fn main_with_invalid_type(found: Type) -> Self {
+        TypeError::MainWithInvalidType { found }
+    }
+
+    pub fn binop_type_mismatch(op: BinOp, left: Type, right: Type) -> Self {
+        TypeError::BinOpTypeMismatch { op, left, right }
+    }
+
+    pub fn unop_type_mismatch(op: UnOp, operand: Type) -> Self {
+        TypeError::UnOpTypeMismatch { op, operand }
+    }
+
+    pub fn scope_error(message: String) -> Self {
+        TypeError::ScopeError { message }
+    }
+
+    pub fn variable_not_found(name: String) -> Self {
+        TypeError::VariableNotFound { name }
+    }
+
+    pub fn function_not_found(name: String) -> Self {
+        TypeError::FunctionNotFound { name }
+    }
+
+    pub fn function_already_defined(name: String) -> Self {
+        TypeError::FunctionAlreadyDefined { name }
+    }
+
+    pub fn invalid_number_of_arguments(func: FnDeclaration, expected: usize, found: usize) -> Self {
+        TypeError::InvalidNumberOfArguments {
+            func,
+            expected,
+            found,
+        }
+    }
+
+    pub fn invalid_argument(
+        func: FnDeclaration,
+        parameter: Parameter,
+        expected: Type,
+        found: Type,
+    ) -> Self {
+        TypeError::InvalidArgument {
+            func,
+            parameter,
+            expected,
+            found,
+        }
+    }
+
+    pub fn invalid_function_return_type(func: FnDeclaration, expected: Type, found: Type) -> Self {
+        TypeError::InvalidFunctionReturnType {
+            func,
+            expected,
+            found,
+        }
+    }
+
+    pub fn invalid_if_condition(expr: Expr, found: Type) -> Self {
+        TypeError::InvalidIfCondition { expr, found }
+    }
+
+    pub fn if_blocks_type_mismatch(then_type: Type, else_type: Type) -> Self {
+        TypeError::IfBlocksTypeMismatch {
+            then_type,
+            else_type,
+        }
+    }
+
+    pub fn missing_variable_type(name: String) -> Self {
+        TypeError::MissingVariableType { name }
+    }
+
+    pub fn let_type_mismatch(name: String, expr: Expr, expected: Type, found: Type) -> Self {
+        TypeError::LetTypeMismatch {
+            name,
+            expr,
+            expected,
+            found,
+        }
+    }
+
+    pub fn assignment_invalid_left_expr(expr: Expr) -> Self {
+        TypeError::AssignmentInvalidLeftExpr { expr }
+    }
+
+    pub fn assignment_type_mismatch(expr: Expr, expected: Type, found: Type) -> Self {
+        TypeError::AssignmentTypeMismatch {
+            expr,
+            expected,
+            found,
+        }
+    }
+
+    pub fn array_invalid_index(index: Expr, found: Type) -> Self {
+        TypeError::ArrayInvalidIndex { index, found }
+    }
+
+    pub fn invalid_while_condition(expr: Expr, found: Type) -> Self {
+        TypeError::InvalidWhileCondition { expr, found }
+    }
+
+    pub fn while_block_type_mismatch(block_type: Type) -> Self {
+        TypeError::WhileBlockTypeMismatch { block_type }
+    }
+}
+
+impl fmt::Display for TypeError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "Type error: ")?;
+        match self {
+            TypeError::InvalidType { expected, found } => {
+                write!(
+                    f,
+                    "Invalid type: expected '{}', found '{}'",
+                    expected, found
+                )
+            }
+            TypeError::UninitializedVariable { expr } => {
+                write!(f, "Uninitialized variable in expression '{}'", expr)
+            }
+            TypeError::MainNotFound => {
+                write!(f, "Main function not found in program")
+            }
+            TypeError::MainWithParameters => {
+                write!(f, "Main function should not have any parameters")
+            }
+            TypeError::MainWithInvalidType { found } => {
+                write!(f, "Main function should return unit type, found '{}'", found)
+            }
+            TypeError::BinOpTypeMismatch { op, left, right } => {
+                write!(
+                    f,
+                    "Binary operation type mismatch: invalid operation '{}' between '{}' and '{}'",
+                    op, left, right
+                )
+            }
+            TypeError::UnOpTypeMismatch { op, operand } => {
+                write!(
+                    f,
+                    "Unary operation type mismatch: invalid operation '{}' on '{}'",
+                    op, operand
+                )
+            }
+            TypeError::ScopeError { message } => {
+                write!(f, "Scope error: {}", message)
+            }
+            TypeError::VariableNotFound { name } => {
+                write!(f, "Variable '{}' not found", name)
+            }
+            TypeError::FunctionNotFound { name } => {
+                write!(f, "Function '{}' not found", name)
+            }
+            TypeError::FunctionAlreadyDefined { name } => {
+                write!(f, "Function '{}' already defined", name)
+            }
+            TypeError::InvalidNumberOfArguments {
+                func,
+                expected,
+                found,
+            } => {
+                write!(
+                    f,
+                    "Invalid number of arguments for function '{}' expected '{}', found '{}'",
+                    func.get_signature_repr(0),
+                    expected,
+                    found
+                )
+            }
+            TypeError::InvalidArgument {
+                func,
+                parameter,
+                expected,
+                found,
+            } => {
+                write!(
+                    f,
+                    "Invalid argument: expected type '{}' for parameter '{}' in function '{}', but found type '{}'",
+                    expected, parameter.id, func.get_signature_repr(0), found
+                )
+            }
+            TypeError::InvalidFunctionReturnType { func, expected, found } => {
+                write!(
+                    f,
+                    "Invalid function return type: expected type '{}' for function '{}', but found type '{}'",
+                    expected,
+                    func.get_signature_repr(0),
+                    found
+                )
+            }
+            TypeError::InvalidIfCondition { expr, found } => {
+                write!(
+                    f,
+                    "Invalid if condition: '{}' is of type '{}' while expected a boolean",
+                    expr, found
+                )
+            }
+            TypeError::IfBlocksTypeMismatch {
+                then_type,
+                else_type,
+            } => {
+                write!(
+                    f,
+                    "If blocks type mismatch: then block is of type '{}' while else block is of type '{}'",
+                    then_type, else_type
+                )
+            }
+            TypeError::MissingVariableType { name } => {
+                write!(f, "Missing variable type for '{}'. You should either specify one, or initialize it with an expression.", name)
+            }
+            TypeError::LetTypeMismatch {
+                name,
+                expr,
+                expected,
+                found,
+            } => {
+                write!(
+                    f,
+                    "Let type mismatch: expected type '{}' for variable '{}' but '{}' is of type '{}'",
+                    expected, name, expr, found
+                )
+            }
+            TypeError::AssignmentInvalidLeftExpr { expr } => {
+                write!(f, "Assignment error: left expression '{}' is not a mutable or uninitialized variable", expr)
+            }
+            TypeError::AssignmentTypeMismatch {
+                expr,
+                expected,
+                found,
+            } => {
+                write!(
+                    f,
+                    "Assignment error: expected type '{}' for variable '{}' but '{}' is of type '{}'",
+                    expected, expr, expr, found
+                )
+            }
+            TypeError::ArrayInvalidIndex { index, found } => {
+                write!(
+                    f,
+                    "Invalid array index: '{}' is of type '{}' while expected an integer",
+                    index, found
+                )
+            }
+            TypeError::InvalidWhileCondition { expr, found } => {
+                write!(
+                    f,
+                    "Invalid while condition: '{}' is of type '{}' while expected a boolean",
+                    expr, found
+                )
+            }
+            TypeError::WhileBlockTypeMismatch { block_type } => {
+                write!(
+                    f,
+                    "While block type mismatch: while block is of type '{}' while expected of unit type",
+                    block_type
+                )
+            }
+        }
+    }
+}
+
+//?#################################################################################################
+//?#                                                                                               #
+//?#                                       Evaluation Errors                                       #
+//?#                                                                                               #
+//?#################################################################################################
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum EvalError {
@@ -387,34 +774,6 @@ impl EvalError {
     }
     pub fn index_out_of_bounds(index: usize, size: usize) -> Self {
         EvalError::IndexOutOfBounds { index, size }
-    }
-}
-
-impl From<EvalError> for SynError {
-    fn from(err: EvalError) -> Self {
-        let message = err.to_string();
-        match err {
-            //TODO: Add location information, or better use of tokens span
-            EvalError::InvalidExtraction {
-                expected_type,
-                found_type,
-            } => SynError::new_spanned("", message),
-            EvalError::Uninit => SynError::new_spanned("", message),
-            EvalError::MainNotFound => SynError::new_spanned("", message),
-            EvalError::MainWithParameters => SynError::new_spanned("", message),
-            EvalError::ScopeError { message } => SynError::new_spanned("", message),
-            EvalError::VariableNotFound { name } => SynError::new_spanned("", message),
-            EvalError::FunctionNotFound { name } => SynError::new_spanned("", message),
-            EvalError::FunctionAlreadyDefined { name } => SynError::new_spanned("", message),
-            EvalError::AssignmentError { expr } => SynError::new_spanned("", message),
-            EvalError::ExpectedIdentifier { found } => SynError::new_spanned("", message),
-            EvalError::BinaryOperationError { op, left, right } => {
-                SynError::new_spanned("", message)
-            }
-            EvalError::UnaryOperationError { op, operand } => SynError::new_spanned("", message),
-            EvalError::DivisionByZero => SynError::new_spanned("", message),
-            EvalError::IndexOutOfBounds { index, size } => SynError::new_spanned("", message),
-        }
     }
 }
 

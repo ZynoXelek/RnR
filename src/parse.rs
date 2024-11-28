@@ -74,19 +74,24 @@ impl Parse for Literal {
 
             // Check for the special syntax
             let str_repr = content.to_string();
-            let r = regex::Regex::new(r"^(?P<size>\d+)\s*;\s*(?P<lit>.+)$").unwrap();
+            let r = regex::Regex::new(r"^.+;.+$").unwrap();
 
             if let Some(caps) = r.captures(&str_repr) {
-                // This is the special syntax [size; lit]
-                size = caps["size"].parse().unwrap();
-                let syn_lit: syn::Lit = syn::parse_str(&caps["lit"]).unwrap();
-                let lit: Literal = syn_lit.into();
-                literals = vec![lit; size];
+                // This is the special syntax [init; size]
+                
+                // Parse the init value
+                // TODO: allow for expressions in init value
+                let init: Literal = content.parse()?;
 
-                // Consume the content
-                while !content.is_empty() {
-                    let _ = content.parse::<TokenStream>().unwrap().to_string();
-                }
+                // Consume the semicolon
+                let _: Token![;] = content.parse()?;
+
+                // Parse the size
+                // TODO: allow for CONSTANT expressions in size
+                let size_lit: Literal = content.parse()?;
+                let size: usize = size_lit.get_int() as usize;
+
+                return Ok(Literal::Array(vec![init; size], size))
             } else {
                 while !content.is_empty() {
                     let lit: Literal = content.parse()?;
@@ -1044,6 +1049,7 @@ impl Parse for Block {
                 // If there is a semi-colon, we consume it
                 if content.peek(Token![;]) {
                     semi = true;
+                    valid_termination = true; // Any statement ending with a semi-colon can terminate the block
                     let _: Token![;] = content.parse()?;
                 } else {
                     semi = false;

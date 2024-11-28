@@ -13,7 +13,10 @@ pub mod test_util;
 // AST related
 pub mod ast;
 pub mod ast_traits;
+
 pub mod parse;
+
+pub mod type_check;
 
 pub mod vm;
 

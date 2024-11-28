@@ -443,77 +443,82 @@ mod test_type {
 
 //? ------------------------------ Initial Tests from the ast_traits file ------------------------------
 
-#[test]
-fn display_if_then_else() {
-    let ts: proc_macro2::TokenStream = "
-    if a {
-        let a : i32 = false;
-        0
-    } else {
-        if a == 5 { b = 8 };
-        while b {
-            e;
+#[cfg(test)]
+mod initial_tests {
+    use super::*;
+    
+    #[test]
+    fn display_if_then_else() {
+        let ts: proc_macro2::TokenStream = "
+        if a {
+            let a : i32 = false;
+            0
+        } else {
+            if a == 5 { b = 8 };
+            while b {
+                e;
+            }
+            b
         }
-        b
+        "
+        .parse()
+        .unwrap();
+        let e: Expr = syn::parse2(ts).unwrap();
+        println!("ast:\n{:?}", e);
+    
+        println!("pretty:\n{}", e);
     }
-    "
-    .parse()
-    .unwrap();
-    let e: Expr = syn::parse2(ts).unwrap();
-    println!("ast:\n{:?}", e);
-
-    println!("pretty:\n{}", e);
-}
-
-#[test]
-fn display_while() {
-    let ts: proc_macro2::TokenStream = "
-    while a == 9 {
-        let b : i32 = 7;
+    
+    #[test]
+    fn display_while() {
+        let ts: proc_macro2::TokenStream = "
+        while a == 9 {
+            let b : i32 = 7;
+        }
+        "
+        .parse()
+        .unwrap();
+        let e: Statement = syn::parse2(ts).unwrap();
+        println!("ast:\n{:?}", e);
+    
+        println!("pretty:\n{}", e);
     }
-    "
-    .parse()
-    .unwrap();
-    let e: Statement = syn::parse2(ts).unwrap();
-    println!("ast:\n{:?}", e);
-
-    println!("pretty:\n{}", e);
-}
-
-#[test]
-fn display_expr() {
-    println!("{}", Expr::Ident("a".to_string()));
-    println!("{}", Expr::Lit(Literal::Int(7)));
-    println!("{}", Expr::Lit(Literal::Bool(false)));
-    let e = Expr::BinOp(
-        BinOp::Add,
-        Box::new(Expr::Ident("a".to_string())),
-        Box::new(Expr::Lit(Literal::Int(7))),
-    );
-    println!("{}", e);
-    assert_eq!(format!("{}", e), "a + 7");
-}
-
-// As you see it becomes cumbersome to write tests
-// if you have to construct the Expr by hand.
-//
-// Instead we might use our parser
-
-#[test]
-fn parse_display_expr() {
-    let ts: proc_macro2::TokenStream = "a + 7".parse().unwrap();
-    let e: Expr = syn::parse2(ts).unwrap();
-    println!("e {}", e);
-}
-
-// This one will fail (Display for `if` is not yet implemented).
-// Implement it as an optional assignment
-//
-// Hint: You need to implement Display for Statement and Block
-
-#[test]
-fn parse_display_if() {
-    let ts: proc_macro2::TokenStream = "if a > 5 {5}".parse().unwrap();
-    let e: Expr = syn::parse2(ts).unwrap();
-    println!("e {}", e);
+    
+    #[test]
+    fn display_expr() {
+        println!("{}", Expr::Ident("a".to_string()));
+        println!("{}", Expr::Lit(Literal::Int(7)));
+        println!("{}", Expr::Lit(Literal::Bool(false)));
+        let e = Expr::BinOp(
+            BinOp::Add,
+            Box::new(Expr::Ident("a".to_string())),
+            Box::new(Expr::Lit(Literal::Int(7))),
+        );
+        println!("{}", e);
+        assert_eq!(format!("{}", e), "a + 7");
+    }
+    
+    // As you see it becomes cumbersome to write tests
+    // if you have to construct the Expr by hand.
+    //
+    // Instead we might use our parser
+    
+    #[test]
+    fn parse_display_expr() {
+        let ts: proc_macro2::TokenStream = "a + 7".parse().unwrap();
+        let e: Expr = syn::parse2(ts).unwrap();
+        println!("e {}", e);
+    }
+    
+    // This one will fail (Display for `if` is not yet implemented).
+    // Implement it as an optional assignment
+    //
+    // Hint: You need to implement Display for Statement and Block
+    
+    #[test]
+    fn parse_display_if() {
+        let ts: proc_macro2::TokenStream = "if a > 5 {5}".parse().unwrap();
+        let e: Expr = syn::parse2(ts).unwrap();
+        println!("e {}", e);
+    }
 }

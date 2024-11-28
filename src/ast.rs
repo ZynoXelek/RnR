@@ -5,7 +5,7 @@ pub enum Type {
     String,
     Array(Box<Type>, usize),
     Unit,
-    Blank, // For display purposes, for instance to display Array<_> for a generic array
+    GenericArray, // Not for use, only for display
 }
 
 #[derive(Debug, Clone, PartialEq)]

@@ -5,7 +5,7 @@ use crate::ast::{
     Arguments, BinOp, Block, Expr, FnDeclaration, Literal, Parameters, Prog, Statement, Type, UnOp,
 };
 use crate::common::Eval;
-use crate::error::*;
+use crate::error::EvalError;
 use crate::intrinsics::*;
 
 //?#################################################################################################
@@ -166,7 +166,7 @@ impl Val {
             Val::Lit(Literal::Array(arr, size)) => Ok(arr.clone()),
             Val::Mut(val) => val.get_array(),
             _ => Err(EvalError::invalid_extraction(
-                Type::Array(Box::new(Type::Blank), 0),
+                Type::GenericArray,
                 Type::from(self.clone()),
             )), // Not the best printing...
         }
@@ -516,6 +516,18 @@ impl VM {
         s
     }
 
+    fn define_block_functions(&mut self, block: &Block) -> Result<(), EvalError> {
+        // This scans the whole block for function definitions in order to define them in the VM
+        // and be able to call them before their definition
+        for stmt in block.statements.iter() {
+            match stmt {
+                Statement::Fn(decl) => self.define_func(&decl)?,
+                _ => (),
+            }
+        }
+        Ok(())
+    }
+
     pub fn eval_expr(&mut self, expr: &Expr) -> Result<Val, EvalError> {
         // DEBUG
         //eprintln!("Evaluating expression:\n{}", expr);
@@ -702,17 +714,5 @@ impl VM {
 
         // Returning the result of the block
         Ok(result)
-    }
-
-    fn define_block_functions(&mut self, block: &Block) -> Result<(), EvalError> {
-        // This scans the whole block for function definitions in order to define them in the VM
-        // and be able to call them before their definition
-        for stmt in block.statements.iter() {
-            match stmt {
-                Statement::Fn(decl) => self.define_func(&decl)?,
-                _ => (),
-            }
-        }
-        Ok(())
     }
 }

@@ -1,4 +1,10 @@
-use crate::error::EvalError;
+use crate::error::{TypeError, EvalError};
+
+pub trait EvalType<T: Clone> {
+    fn eval_type(&self) -> Result<T, TypeError>
+    where
+        T: Clone;
+}
 
 pub trait Eval<T: Clone> {
     fn eval(&self) -> Result<T, EvalError>
@@ -16,6 +22,17 @@ where
     println!("{}", r);
     println!(" --- End Parsing --- ");
     r
+}
+
+pub fn parse_type<T1, T2>(s: &str) -> Result<T2, TypeError>
+where
+    T1: syn::parse::Parse + std::fmt::Display + EvalType<T2>,
+    T2: std::fmt::Debug + Clone,
+{
+    let bl = parse::<T1>(s);
+    let v = bl.eval_type()?;
+    println!("\nreturn {:?}", v);
+    Ok(v)
 }
 
 pub fn parse_test<T1, T2>(s: &str) -> Result<T2, EvalError>

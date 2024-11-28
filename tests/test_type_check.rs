@@ -1,25 +1,27 @@
-use rnr::ast::{Block, Expr, Literal, Prog};
-use rnr::common::parse_test;
-use rnr::vm::Val;
+use rnr::ast::{Block, Expr, Prog, Type};
+use rnr::common::parse_type;
+use rnr::type_check::TypeVal;
 
+//TODO: Update, add and improve tests (modify existing ones as well)
+// Some should be removed as checking unit type so many times is unnecessary
 #[cfg(test)]
-mod test_vm {
+mod test_tvm {
     use super::*;
 
     #[test]
     fn test_expr() {
-        let v = parse_test::<Expr, Val>(
+        let v = parse_type::<Expr, TypeVal>(
             "        
             1 + 1
             ",
         );
 
-        assert_eq!(v.unwrap().get_int().unwrap(), 2);
+        assert_eq!(v.unwrap().get_initialized_type(), Type::I32);
     }
 
     #[test]
     fn test_bool() {
-        let v = parse_test::<Block, Val>(
+        let v = parse_type::<Block, TypeVal>(
             "
             {
                 let a = true && false;
@@ -28,12 +30,12 @@ mod test_vm {
             ",
         );
 
-        assert!(!v.unwrap().get_bool().unwrap());
+        assert_eq!(v.unwrap().get_initialized_type(), Type::Bool);
     }
 
     #[test]
     fn test_bool_bang2() {
-        let v = parse_test::<Block, Val>(
+        let v = parse_type::<Block, TypeVal>(
             "
             {
                 let a = (!true) && false;
@@ -42,26 +44,26 @@ mod test_vm {
             ",
         );
 
-        assert!(!v.unwrap().get_bool().unwrap());
+        assert_eq!(v.unwrap().get_initialized_type(), Type::Bool);
     }
 
     #[test]
     fn test_bool_bang() {
-        let v = parse_test::<Block, Val>(
+        let v = parse_type::<Block, TypeVal>(
             "
             {
-                let a = true && !false;
-                a
+                let a = true && false;
+                !a
             }
             ",
         );
 
-        assert!(v.unwrap().get_bool().unwrap());
+        assert_eq!(v.unwrap().get_initialized_type(), Type::Bool);
     }
 
     #[test]
     fn test_block_let() {
-        let v = parse_test::<Block, Val>(
+        let v = parse_type::<Block, TypeVal>(
             "
             {
                 let a: i32 = 1;
@@ -70,12 +72,12 @@ mod test_vm {
                 a + b
             }",
         );
-        assert_eq!(v.unwrap().get_int().unwrap(), 3);
+        assert_eq!(v.unwrap().get_initialized_type(), Type::I32);
     }
 
     #[test]
     fn test_block_let_shadow() {
-        let v = parse_test::<Block, Val>(
+        let v = parse_type::<Block, TypeVal>(
             "
             {
                 let a: i32 = 1;
@@ -86,12 +88,12 @@ mod test_vm {
                 a + b
             }",
         );
-        assert_eq!(v.unwrap().get_int().unwrap(), 7);
+        assert_eq!(v.unwrap().get_initialized_type(), Type::I32);
     }
 
     #[test]
     fn test_local_block() {
-        let v = parse_test::<Block, Val>(
+        let v = parse_type::<Block, TypeVal>(
             "
             {
                 let a = 1;
@@ -105,12 +107,12 @@ mod test_vm {
             ",
         );
 
-        assert_eq!(v.unwrap().get_int().unwrap(), 2);
+        assert_eq!(v.unwrap().get_initialized_type(), Type::I32);
     }
 
     #[test]
     fn test_block_assign() {
-        let v = parse_test::<Block, Val>(
+        let v = parse_type::<Block, TypeVal>(
             "
             {
                 let mut a: i32 = 1;
@@ -118,12 +120,12 @@ mod test_vm {
                 a
             }",
         );
-        assert_eq!(v.unwrap().get_int().unwrap(), 3);
+        assert_eq!(v.unwrap().get_initialized_type(), Type::I32);
     }
 
     #[test]
     fn test_expr_if_then_else() {
-        let v = parse_test::<Block, Val>(
+        let v = parse_type::<Block, TypeVal>(
             "
             {
                 let mut a: i32 = 1;
@@ -132,16 +134,16 @@ mod test_vm {
             }",
         );
 
-        assert_eq!(v.unwrap().get_int().unwrap(), 2);
+        assert_eq!(v.unwrap().get_initialized_type(), Type::I32);
     }
 
     #[test]
     fn test_while() {
-        let v = parse_test::<Block, Val>(
+        let v = parse_type::<Block, TypeVal>(
             "
             {
-                let a = 2;
-                let b = 0;
+                let mut a = 2;
+                let mut b = 0;
                 while a > 0 {
                     a = a - 1;
                     b = b + 1;
@@ -151,28 +153,28 @@ mod test_vm {
             ",
         );
 
-        assert_eq!(v.unwrap().get_int().unwrap(), 2);
+        assert_eq!(v.unwrap().get_initialized_type(), Type::I32);
     }
 
     #[test]
     fn test_array() {
-        let v = parse_test::<Block, Val>(
+        let v = parse_type::<Block, TypeVal>(
             "
             {
                 let a = [1, 2, 3];
                 let b: [i32; 3] = [4, 5, 6]; //TODO: Add support for length check (will be done by type checker)
-                let c = [10; 7]; // This is an array of size 7 initialized with 10
+                let c = [7; 10];
                 a[1] + b[2] + c[5] // 2 + 6 + 10
             }
             ",
         );
 
-        assert_eq!(v.unwrap().get_int().unwrap(), 18);
+        assert_eq!(v.unwrap().get_initialized_type(), Type::I32);
     }
 
     #[test]
     fn test_array_assignment() {
-        let v = parse_test::<Block, Val>(
+        let v = parse_type::<Block, TypeVal>(
             "
             {
                 let mut a = [1, 2, 3];
@@ -182,26 +184,26 @@ mod test_vm {
             ",
         );
 
-        assert_eq!(v.unwrap().get_int().unwrap(), 4);
+        assert_eq!(v.unwrap().get_initialized_type(), Type::I32);
     }
 
     #[test]
     fn test_prog1() {
-        let v = parse_test::<Prog, Val>(
+        let v = parse_type::<Prog, TypeVal>(
             "
             fn main() {
                 let a = 1;
-                a
+                a;
             }
             ",
         );
 
-        assert_eq!(v.unwrap().get_int().unwrap(), 1);
+        assert_eq!(v.unwrap().get_initialized_type(), Type::Unit);
     }
 
     #[test]
     fn test_prog2() {
-        let v = parse_test::<Prog, Val>(
+        let v = parse_type::<Prog, TypeVal>(
             "
             fn dummy() -> i32 {
                 1
@@ -209,17 +211,17 @@ mod test_vm {
 
             fn main() {
                 let a = 1;
-                a + dummy()
+                a + dummy();
             }
             ",
         );
 
-        assert_eq!(v.unwrap().get_int().unwrap(), 2);
+        assert_eq!(v.unwrap().get_initialized_type(), Type::Unit);
     }
 
     #[test]
     fn test_local_fn1() {
-        let v = parse_test::<Prog, Val>(
+        let v = parse_type::<Prog, TypeVal>(
             "
             fn main() {
 
@@ -232,17 +234,18 @@ mod test_vm {
                 }
 
                 let a = f(1, 2); // a == 3
-                a + g() // 3 + 7 == 10
+                a + g(); // 3 + 7 == 10
             }
             ",
         );
 
-        assert_eq!(v.unwrap().get_int().unwrap(), 10);
+        assert_eq!(v.unwrap().get_initialized_type(), Type::Unit);
     }
 
+    //TODO: Support macros
     #[test]
     fn test_println() {
-        let v = parse_test::<Prog, Val>(
+        let v = parse_type::<Prog, TypeVal>(
             "
             fn main() {
                 fn f(i: i32, j: i32) -> i32 {
@@ -255,12 +258,12 @@ mod test_vm {
             ",
         );
 
-        assert_eq!(v.unwrap(), Val::Lit(Literal::Unit));
+        assert_eq!(v.unwrap().get_initialized_type(), Type::Unit);
     }
 
     #[test]
     fn test_fn_shadowing() {
-        let v = parse_test::<Prog, Val>(
+        let v = parse_type::<Prog, TypeVal>(
             "
             fn main() {
 
@@ -276,17 +279,17 @@ mod test_vm {
                     }
                     f(3, 4) // -1
                 }
-                a + g() // 3 + -1 == 2
+                a + g(); // 3 + -1 == 2
             }
             ",
         );
 
-        assert_eq!(v.unwrap().get_int().unwrap(), 2);
+        assert_eq!(v.unwrap().get_initialized_type(), Type::Unit);
     }
 
     #[test]
     fn test_call_before_def() {
-        let v = parse_test::<Prog, Val>(
+        let v = parse_type::<Prog, TypeVal>(
             "
             fn main() {
 
@@ -302,17 +305,17 @@ mod test_vm {
                     }
                     f(3, 4) // -1
                 }
-                a + g() // 3 + -1 == 2
+                a + g(); // 3 + -1 == 2
             }
             ",
         );
 
-        assert_eq!(v.unwrap().get_int().unwrap(), 2);
+        assert_eq!(v.unwrap().get_initialized_type(), Type::Unit);
     }
 
     #[test]
     fn test_recursion() {
-        let v = parse_test::<Prog, Val>(
+        let v = parse_type::<Prog, TypeVal>(
             "
             fn main() {
                 fn fact(n: i32) -> i32 {
@@ -323,41 +326,76 @@ mod test_vm {
                     }
                 }
 
-                fact(5)
+                let a = fact(5);
             }
             ",
         );
 
-        assert_eq!(v.unwrap().get_int().unwrap(), 120);
+        assert_eq!(v.unwrap().get_initialized_type(), Type::Unit);
     }
 
     #[test]
     fn test_check_if_then_else_shadowing() {
-        let v = parse_test::<Block, Val>(
+        let v = parse_type::<Block, TypeVal>(
             "
             {
                 let a: i32 = 1 + 2; // a == 3
-                let a: i32 = 2 + a; // a == 5
+                let mut a: i32 = 2 + a; // a == 5
                 if true {
-                    a = a - 1;      // outer a == 4
-                    let a: i32 = 0; // inner a == 0
-                    a = a + 1       // inner a == 1
+                    a = a - 1;          // outer a == 4
+                    let mut a: i32 = 0; // inner a == 0
+                    a = a + 1           // inner a == 1
                 } else {
                     a = a - 1
                 };
-                a   // a == 4
+                a;   // a == 4
             }
             ",
         );
 
-        assert_eq!(v.unwrap().get_int().unwrap(), 4);
+        assert_eq!(v.unwrap().get_initialized_type(), Type::Unit);
+    }
+
+    #[test]
+    #[should_panic]
+    fn test_immutable_array() {
+        let v = parse_type::<Block, TypeVal>(
+            "
+            {
+                let a = [1, 2, 3];
+                a[1] = 4;  // Should crash (a is immutable)
+            }
+            ",
+        );
+
+        println!(
+            "Did not panic... v = {:?}",
+            v.unwrap().get_initialized_type()
+        );
+    }
+
+    #[test]
+    #[should_panic]
+    fn test_invalid_size_array() {
+        let v = parse_type::<Block, TypeVal>(
+            "
+            {
+                let a: [i32; 2] = [1, 2, 3]; // Should crash (wrong size)
+            }
+            ",
+        );
+
+        println!(
+            "Did not panic... v = {:?}",
+            v.unwrap().get_initialized_type()
+        );
     }
 
     #[test]
     // #[should_panic(expected = "variable 'a' not found")] // Specifying a panic message is too restrictive and makes the test fragile
     #[should_panic]
     fn test_local_scope() {
-        let v = parse_test::<Block, Val>(
+        let v = parse_type::<Block, TypeVal>(
             "
             {
                 let b = {
@@ -371,7 +409,7 @@ mod test_vm {
 
         println!(
             "Did not panic... v = {:?}",
-            v.unwrap().get_literal().unwrap()
+            v.unwrap().get_initialized_type()
         );
     }
 
@@ -379,7 +417,7 @@ mod test_vm {
     // #[should_panic(expected = "function 'add' not found")] // Specifying a panic message is too restrictive and makes the test fragile
     #[should_panic]
     fn test_local_scope_func() {
-        let v = parse_test::<Prog, Val>(
+        let v = parse_type::<Prog, TypeVal>(
             "
             fn testing() -> i32 {
                 fn add(a: i32, b: i32) -> i32 {
@@ -419,7 +457,7 @@ mod test_vm {
 
         println!(
             "Did not panic... val = {:?}",
-            v.unwrap().get_literal().unwrap()
+            v.unwrap().get_initialized_type()
         );
     }
 }
