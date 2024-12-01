@@ -12,7 +12,8 @@ macro_rules! test_expr {
         let expected = $expr;
         let src = stringify!($expr);
         let expr: $crate::ast::Expr = $crate::parse::parse(src);
-        let result: $crate::ast::Literal = $crate::common::Eval::eval(&expr).unwrap().into();
+        let value: $crate::vm::Val = $crate::common::Eval::eval(&expr).unwrap();
+        let result: $crate::ast::Literal = value.into();
         assert_eq!(result, $crate::ast::Literal::from(expected));
     }};
 }
@@ -44,6 +45,20 @@ where
     assert_eq!(val, expected.into());
 }
 
+/// Assert that type results in the expected type.
+/// Does not perform value verification.
+pub fn assert_type<T1, T2>(p: &T1, expected: T2)
+where
+    T1: Eval<Type>,
+    T2: Into<Type>,
+{
+    let ty = p.eval();
+    println!("Type checking result: {:?}", ty);
+    assert!(ty.is_ok());
+    let ty = ty.unwrap();
+    assert_eq!(ty, expected.into());
+}
+
 /// Assert that `p` evaluates to the expected value **and** that the type returned by the type
 /// checker matches the type of the expected value.
 /// Expected is a primitive value, such as an i32 or bool.
@@ -54,7 +69,7 @@ where
 {
     // Convert the expected value to a literal and a type.
     let expected_type: Type = expected.into();
-    // assert_type(p, expected_type); // NOTE: enable later for type checking!
+    assert_type(p, expected_type); // NOTE: enable later for type checking!
     assert_value(p, expected);
 }
 
@@ -118,7 +133,8 @@ macro_rules! test_block {
             // Convert to source String and parse, eval, etc.
             let src = stringify!($block);
             let block: Block = $crate::parse::parse(src);
-            assert_value(&block, result);
+            // assert_value(&block, result);
+            assert_eval(&block, result); // Type checking and evaluation.
             test_display_parse(block);  // NOTE: comment out to disable Display testing
         }
     };
@@ -143,7 +159,8 @@ macro_rules! test_block {
             // Evaluate the final expression...
             let expected = $x;
             //...and use it to check that type checking and evaluation agrees.
-            assert_value(&block, expected);
+            // assert_value(&block, expected);
+            assert_eval(&block, expected); // Type checking and evaluation.
             // Convert the parsed AST to string and parse again, checking that
             // we get the same thing back.
             test_display_parse(block);  // NOTE: comment out to disable Display testing

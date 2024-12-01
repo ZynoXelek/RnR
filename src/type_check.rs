@@ -4,8 +4,8 @@ use std::collections::HashMap;
 use crate::ast::{
     Arguments, BinOp, Block, Expr, FnDeclaration, Literal, Parameter, Parameters, Prog, Statement, Type, UnOp,
 };
-use crate::common::EvalType;
-use crate::error::TypeError;
+use crate::common::{EvalType, Eval};
+use crate::error::{TypeError, EvalError};
 use crate::intrinsics::*;
 
 //?#################################################################################################
@@ -294,6 +294,22 @@ impl EvalType<TypeVal> for Prog {
             }
         }
         Err(TypeError::main_not_found())
+    }
+}
+
+//? ------------- General -------------
+
+impl<T> Eval<Type> for T where T: EvalType<TypeVal> {
+    fn eval(&self) -> Result<Type, EvalError> {
+        let type_val_res = self.eval_type();
+        match type_val_res {
+            Ok(type_val) => {
+                Ok(type_val.get_type())
+            }
+            Err(e) => {
+                return Err(EvalError::type_error(e));
+            }
+        }
     }
 }
 

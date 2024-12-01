@@ -727,6 +727,7 @@ pub enum EvalError {
         index: usize,
         size: usize,
     },
+    TypeError(TypeError),
 }
 
 impl EvalError {
@@ -774,6 +775,9 @@ impl EvalError {
     }
     pub fn index_out_of_bounds(index: usize, size: usize) -> Self {
         EvalError::IndexOutOfBounds { index, size }
+    }
+    pub fn type_error(error: TypeError) -> Self {
+        EvalError::TypeError(error)
     }
 }
 
@@ -841,6 +845,9 @@ impl fmt::Display for EvalError {
                     "Index out of bounds: index '{}' out of size '{}'",
                     index, size
                 )
+            }
+            EvalError::TypeError(error) => {
+                write!(f, "{}", error)
             }
         }
     }

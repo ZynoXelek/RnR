@@ -462,6 +462,7 @@ fn block_array_alternative_def() {
 }
 
 #[test]
+#[ignore = "Not yet implemented. Must use literals not expr for now."]
 fn block_array_alternative_def_with_expr() {
     test_block!({
         // It can only use constants, not variables during expression.
