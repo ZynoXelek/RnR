@@ -31,6 +31,19 @@ pub fn assert_parse_fail<T: Parse + std::fmt::Debug>(src: &str) {
     );
 }
 
+/// Assert that type checking fails.
+pub fn assert_type_fail<T>(p: &T)
+where T: Eval<Type>
+{
+    let typ = p.eval();
+    assert!(typ.is_err());
+}
+
+/// Alias for `assert_type_fail` to avoid specifying the generic type parameter.
+pub fn assert_block_type_fail(p: &Block) {
+    assert_type_fail(p);
+}
+
 /// Assert that evaluation (by VM) results in the expected value.
 /// Does not perform type checking.
 pub fn assert_value<T1, T2>(p: &T1, expected: T2)

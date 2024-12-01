@@ -18,6 +18,22 @@ mod test_vm {
     }
 
     #[test]
+    fn test_uninitialized() {
+        let v = parse_test::<Block, Val>(
+            "
+            {
+                let x: i32 = 1;
+                let y: i32;
+                y = x + 1;
+                x + y
+            }
+            ",
+        );
+
+        assert_eq!(v.unwrap().get_int().unwrap(), 3);
+    }
+
+    #[test]
     fn test_bool() {
         let v = parse_test::<Block, Val>(
             "
@@ -160,7 +176,7 @@ mod test_vm {
             "
             {
                 let a = [1, 2, 3];
-                let b: [i32; 3] = [4, 5, 6]; //TODO: Add support for length check (will be done by type checker)
+                let b: [i32; 3] = [4, 5, 6]; //Length check is done by type checker
                 let c = [10; 7]; // This is an array of size 7 initialized with 10
                 a[1] + b[2] + c[5] // 2 + 6 + 10
             }

@@ -559,6 +559,7 @@ impl TVM {
                 // - each argument is initialized
                 // And then we can return the function type
                 // The function itself is verified at its declaration, so there is no need to check the block inside the function here
+                //TODO: What about macros and intrinsics? For instance, what about the 'println!' macro?
                 let func = self.get_func(name)?;
                 let params = &func.parameters;
 

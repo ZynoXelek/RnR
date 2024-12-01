@@ -392,6 +392,17 @@ fn block_with_typed_immutable_variables_1() {
 }
 
 #[test]
+fn block_with_late_init() {
+    test_block!({
+        let x: i32;
+        let y: i32;
+        x = 1;
+        y = 2;
+        x + y
+    });
+}
+
+#[test]
 fn block_with_typed_immutable_variables_2() {
     test_block!({
         let x: i32 = 1;

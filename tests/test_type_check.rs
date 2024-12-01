@@ -2,8 +2,6 @@ use rnr::ast::{Block, Expr, Prog, Type};
 use rnr::common::parse_type;
 use rnr::type_check::TypeVal;
 
-//TODO: Update, add and improve tests (modify existing ones as well)
-// Some should be removed as checking unit type so many times is unnecessary
 #[cfg(test)]
 mod test_tvm {
     use super::*;
@@ -13,6 +11,21 @@ mod test_tvm {
         let v = parse_type::<Expr, TypeVal>(
             "        
             1 + 1
+            ",
+        );
+
+        assert_eq!(v.unwrap().get_initialized_type(), Type::I32);
+    }
+
+    #[test]
+    fn test_later_init() {
+        let v = parse_type::<Block, TypeVal>(
+            "
+            {
+                let a: i32;
+                a = 1;
+                a
+            }
             ",
         );
 
@@ -162,7 +175,7 @@ mod test_tvm {
             "
             {
                 let a = [1, 2, 3];
-                let b: [i32; 3] = [4, 5, 6]; //TODO: Add support for length check (will be done by type checker)
+                let b: [i32; 3] = [4, 5, 6];
                 let c = [7; 10];
                 a[1] + b[2] + c[5] // 2 + 6 + 10
             }
@@ -356,6 +369,82 @@ mod test_tvm {
         assert_eq!(v.unwrap().get_initialized_type(), Type::Unit);
     }
 
+    //? --------------------------- Failing tests ---------------------------
+
+    #[test]
+    #[should_panic]
+    fn test_var_late_init_wrong_type() {
+        let v = parse_type::<Block, TypeVal>(
+            "
+            {
+                let a: i32;
+                a = true; // Should crash (wrong type)
+            }
+            ",
+        );
+
+        println!(
+            "Did not panic... v = {:?}",
+            v.unwrap().get_initialized_type()
+        );
+    }
+
+    #[test]
+    #[should_panic]
+    fn test_immutable_var() {
+        let v = parse_type::<Block, TypeVal>(
+            "
+            {
+                let a = 3;
+                a = 2; // Should crash (a is immutable)
+                a
+            }
+            ",
+        );
+
+        println!(
+            "Did not panic... v = {:?}",
+            v.unwrap().get_initialized_type()
+        );
+    }
+
+    #[test]
+    #[should_panic]
+    fn test_invalid_binop() {
+        let v = parse_type::<Block, TypeVal>(
+            "
+            {
+                let a = 3;
+                let b = true;
+                a + b
+            }
+            ",
+        );
+
+        println!(
+            "Did not panic... v = {:?}",
+            v.unwrap().get_initialized_type()
+        );
+    }
+
+    #[test]
+    #[should_panic]
+    fn test_invalid_unop() {
+        let v = parse_type::<Block, TypeVal>(
+            "
+            {
+                let a = 3;
+                !a
+            }
+            ",
+        );
+
+        println!(
+            "Did not panic... v = {:?}",
+            v.unwrap().get_initialized_type()
+        );
+    }
+
     #[test]
     #[should_panic]
     fn test_immutable_array() {
@@ -414,6 +503,107 @@ mod test_tvm {
     }
 
     #[test]
+    #[should_panic]
+    fn test_invalid_function_def1() {
+        let v = parse_type::<Block, TypeVal>(
+            "
+            {
+                fn f(i: i32, j: i32) -> bool { // Should crash (return type mismatch)
+                    i + j
+                }
+            }
+            ",
+        );
+
+        println!(
+            "Did not panic... v = {:?}",
+            v.unwrap().get_initialized_type()
+        );
+    }
+
+    #[test]
+    #[should_panic]
+    fn test_invalid_function_def2() {
+        let v = parse_type::<Block, TypeVal>(
+            "
+            {
+                fn f(i: i32, j: i32) { // Should crash (return type mismatch -> should be unit)
+                    i + j
+                }
+            }
+            ",
+        );
+
+        println!(
+            "Did not panic... v = {:?}",
+            v.unwrap().get_initialized_type()
+        );
+    }
+
+    #[test]
+    #[should_panic]
+    fn test_function_missing_args() {
+        let v = parse_type::<Block, TypeVal>(
+            "
+            {
+                fn f(i: i32, j: i32) -> i32 {
+                    i + j
+                }
+
+                f(1)   // Should crash (missing argument)
+            }
+            ",
+        );
+
+        println!(
+            "Did not panic... v = {:?}",
+            v.unwrap().get_initialized_type()
+        );
+    }
+
+    #[test]
+    #[should_panic]
+    fn test_function_too_many_args() {
+        let v = parse_type::<Block, TypeVal>(
+            "
+            {
+                fn f(i: i32, j: i32) -> i32 {
+                    i + j
+                }
+
+                f(1, 2, 3)   // Should crash (too many arguments)
+            }
+            ",
+        );
+
+        println!(
+            "Did not panic... v = {:?}",
+            v.unwrap().get_initialized_type()
+        );
+    }
+
+    #[test]
+    #[should_panic]
+    fn test_function_invalid_arg_types() {
+        let v = parse_type::<Block, TypeVal>(
+            "
+            {
+                fn f(i: i32, j: i32) -> i32 {
+                    i + j
+                }
+
+                f(1, true)   // Should crash (invalid argument types)
+            }
+            ",
+        );
+
+        println!(
+            "Did not panic... v = {:?}",
+            v.unwrap().get_initialized_type()
+        );
+    }
+
+    #[test]
     // #[should_panic(expected = "function 'add' not found")] // Specifying a panic message is too restrictive and makes the test fragile
     #[should_panic]
     fn test_local_scope_func() {
@@ -457,6 +647,120 @@ mod test_tvm {
 
         println!(
             "Did not panic... val = {:?}",
+            v.unwrap().get_initialized_type()
+        );
+    }
+
+    #[test]
+    #[should_panic]
+    fn test_while_loop_with_invalid_condition() {
+        let v = parse_type::<Block, TypeVal>(
+            "
+            {
+                while 1 {
+                    1;
+                }
+            }
+            ",
+        );
+
+        println!(
+            "Did not panic... v = {:?}",
+            v.unwrap().get_initialized_type()
+        );
+    }
+
+    #[test]
+    #[should_panic]
+    fn test_while_loop_with_return_type() {
+        let v = parse_type::<Block, TypeVal>(
+            "
+            {
+                while true {
+                    1
+                }
+            }
+            ",
+        );
+
+        println!(
+            "Did not panic... v = {:?}",
+            v.unwrap().get_initialized_type()
+        );
+    }
+
+    #[test]
+    #[should_panic]
+    fn test_if_with_invalid_condition() {
+        let v = parse_type::<Block, TypeVal>(
+            "
+            {
+                if 1 {
+                    1;
+                } else {
+                    2;
+                }
+            }
+            ",
+        );
+
+        println!(
+            "Did not panic... v = {:?}",
+            v.unwrap().get_initialized_type()
+        );
+    }
+
+    #[test]
+    #[should_panic]
+    fn test_if_with_mismatching_blocks_types() {
+        let v = parse_type::<Block, TypeVal>(
+            "
+            {
+                if true {
+                    1
+                } else {
+                    true
+                }
+            }
+            ",
+        );
+
+        println!(
+            "Did not panic... v = {:?}",
+            v.unwrap().get_initialized_type()
+        );
+    }
+
+    #[test]
+    #[should_panic]
+    fn test_invalid_main_type() {
+        let v = parse_type::<Prog, TypeVal>(
+            "
+            fn main() -> i32 {
+                1
+            }
+            ",
+        );
+
+        println!(
+            "Did not panic... v = {:?}",
+            v.unwrap().get_initialized_type()
+        );
+    }
+
+    #[test]
+    #[should_panic]
+    fn test_invalid_main_args() {
+        let v = parse_type::<Prog, TypeVal>(
+            "
+            fn main(x: i32) {
+                let y = x + 1;
+            }
+            ",
+        );
+
+        println!(
+            "Did not panic... v = {:?}",
             v.unwrap().get_initialized_type()
         );
     }
