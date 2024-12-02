@@ -255,7 +255,6 @@ mod test_tvm {
         assert_eq!(v.unwrap().get_initialized_type(), Type::Unit);
     }
 
-    //TODO: Support macros
     #[test]
     fn test_println() {
         let v = parse_type::<Prog, TypeVal>(
@@ -601,6 +600,63 @@ mod test_tvm {
             "Did not panic... v = {:?}",
             v.unwrap().get_initialized_type()
         );
+    }
+
+    #[test]
+    #[should_panic]
+    fn test_invalid_println_call1() {
+        let v = parse_type::<Block, TypeVal>(
+            "
+            {
+                println!(\"{} {:?}\", 1, 2, 3); // Should crash (too many arguments)
+            }
+            ",
+        );
+
+        assert_eq!(v.unwrap().get_initialized_type(), Type::Unit);
+    }
+
+    #[test]
+    #[should_panic]
+    fn test_invalid_println_call2() {
+        let v = parse_type::<Block, TypeVal>(
+            "
+            {
+                println!(\"{}\"); // Should crash (not enough arguments)
+            }
+            ",
+        );
+
+        assert_eq!(v.unwrap().get_initialized_type(), Type::Unit);
+    }
+
+    #[test]
+    #[should_panic]
+    fn test_invalid_println_call3() {
+        let v = parse_type::<Block, TypeVal>(
+            "
+            {
+                println!(); // Should crash (not enough arguments)
+            }
+            ",
+        );
+
+        assert_eq!(v.unwrap().get_initialized_type(), Type::Unit);
+    }
+
+    #[test]
+    #[should_panic]
+    fn test_invalid_println_call4() {
+        let v = parse_type::<Block, TypeVal>(
+            "
+            {
+                let a: i32;
+                println!(\"a is {}\", a); // Should crash (uninitialized variable)
+            }
+            ",
+        );
+
+        assert_eq!(v.unwrap().get_initialized_type(), Type::Unit);
     }
 
     #[test]

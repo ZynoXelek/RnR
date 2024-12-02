@@ -2,10 +2,11 @@ use core::fmt;
 use std::collections::HashMap;
 
 use crate::ast::{
-    Arguments, BinOp, Block, Expr, FnDeclaration, Literal, Parameter, Parameters, Prog, Statement, Type, UnOp,
+    Arguments, BinOp, Block, Expr, FnDeclaration, Literal, Mutable, Parameter, Parameters, Prog,
+    Statement, Type, UnOp,
 };
-use crate::common::{EvalType, Eval};
-use crate::error::{TypeError, EvalError};
+use crate::common::{Eval, EvalType};
+use crate::error::{EvalError, TypeError};
 use crate::intrinsics::*;
 
 //?#################################################################################################
@@ -19,7 +20,7 @@ use crate::intrinsics::*;
 #[derive(Debug, Clone, PartialEq)]
 pub enum TypeVal {
     Type(Type),
-    Uninit(Type), // Will allow to check for uninitialized variables
+    Uninit(Type),      // Will allow to check for uninitialized variables
     Mut(Box<TypeVal>), // Will allow to check for assignments to mutable variables
 }
 
@@ -138,7 +139,6 @@ impl fmt::Display for TypeVal {
 
 impl BinOp {
     pub fn eval_type(&self, left: TypeVal, right: TypeVal) -> Result<TypeVal, TypeError> {
-
         // Here, we don't worry about uninitialized variables, as the type checker will have already checked that before calling this
         let left_type = left.get_type();
         let right_type = right.get_type();
@@ -169,7 +169,7 @@ impl BinOp {
                 }
             }
             // Comparison operations
-            BinOp::Eq | BinOp::Ne  => {
+            BinOp::Eq | BinOp::Ne => {
                 if left_type == right_type {
                     Ok(TypeVal::Type(Type::Bool))
                 } else {
@@ -181,7 +181,8 @@ impl BinOp {
                 }
             }
             BinOp::Lt | BinOp::Le | BinOp::Gt | BinOp::Ge => {
-                if (left_type == Type::I32 || left_type == Type::String) && left_type == right_type {
+                if (left_type == Type::I32 || left_type == Type::String) && left_type == right_type
+                {
                     Ok(TypeVal::Type(Type::Bool))
                 } else {
                     Err(TypeError::binop_type_mismatch(
@@ -212,7 +213,6 @@ impl BinOp {
 
 impl UnOp {
     fn eval_type(&self, operand: TypeVal) -> Result<TypeVal, TypeError> {
-
         // Here, we don't worry about uninitialized variables, as the type checker will have already checked that before calling this
         let operand_type = operand.get_type();
 
@@ -221,14 +221,20 @@ impl UnOp {
                 if operand_type == Type::I32 {
                     Ok(TypeVal::Type(Type::I32))
                 } else {
-                    Err(TypeError::unop_type_mismatch(self.clone(), operand_type.clone()))
+                    Err(TypeError::unop_type_mismatch(
+                        self.clone(),
+                        operand_type.clone(),
+                    ))
                 }
             }
             UnOp::Bang => {
                 if operand_type == Type::Bool {
                     Ok(TypeVal::Type(Type::Bool))
                 } else {
-                    Err(TypeError::unop_type_mismatch(self.clone(), operand_type.clone()))
+                    Err(TypeError::unop_type_mismatch(
+                        self.clone(),
+                        operand_type.clone(),
+                    ))
                 }
             }
             _ => unimplemented!("type eval not implemented for unary operation {:?}", self),
@@ -282,7 +288,7 @@ impl EvalType<TypeVal> for Prog {
                 // Check that the return type is correct -> Should be Unit
                 //? Theoretically, can also be Result<(), E>, where E implements the std::error::Error trait
                 let return_type = &decl.ty;
-                
+
                 if let Some(ty) = return_type {
                     if *ty != Type::Unit {
                         return Err(TypeError::main_with_invalid_type(ty.clone()));
@@ -299,13 +305,14 @@ impl EvalType<TypeVal> for Prog {
 
 //? ------------- General -------------
 
-impl<T> Eval<Type> for T where T: EvalType<TypeVal> {
+impl<T> Eval<Type> for T
+where
+    T: EvalType<TypeVal>,
+{
     fn eval(&self) -> Result<Type, EvalError> {
         let type_val_res = self.eval_type();
         match type_val_res {
-            Ok(type_val) => {
-                Ok(type_val.get_type())
-            }
+            Ok(type_val) => Ok(type_val.get_type()),
             Err(e) => {
                 return Err(EvalError::type_error(e));
             }
@@ -361,10 +368,7 @@ impl TVM {
     }
 
     // Creates an environment for testing functions
-    fn env_from_function_call(
-        &mut self,
-        params: &Parameters,
-    ) -> HashMap<String, TypeVal> {
+    fn env_from_function_call(&mut self, params: &Parameters) -> HashMap<String, TypeVal> {
         let mut env: HashMap<String, TypeVal> = HashMap::new();
         for param in params.0.iter() {
             env.insert(param.id.clone(), TypeVal::from(param.clone()));
@@ -418,7 +422,7 @@ impl TVM {
     fn define_func(&mut self, func: &FnDeclaration) -> Result<(), TypeError> {
         // This should define a function in the current scope
         // At this step, we don't check their validity yet, so that they are available for calls in other functions
-        
+
         let name = func.id.clone();
         if let Some(env) = self.func_env.last_mut() {
             // Can't define two functions with the same name in the same scope
@@ -510,7 +514,7 @@ impl TVM {
                 Statement::Fn(decl) => {
                     self.define_func(&decl)?;
                     new_funcs.push(decl.clone());
-                },
+                }
                 _ => (),
             }
         }
@@ -521,6 +525,80 @@ impl TVM {
         }
 
         Ok(())
+    }
+
+    fn check_intrinsic_call(&mut self, name: &str, args: &Arguments) -> Result<TypeVal, TypeError> {
+        // Very specific but do not really know how to improve.
+        // Could at least move this code to the intrinsic definition so it is centralized
+        if let Some(intrinsic) = self.intrinsics.get(name) {
+            match name {
+                "println!" => self.check_println_call(args),
+                _ => unimplemented!("intrinsic function '{}' not implemented", name),
+            }
+        } else {
+            Err(TypeError::function_not_found(name.to_string()))
+        }
+    }
+
+    fn check_println_call(&mut self, args: &Arguments) -> Result<TypeVal, TypeError> {
+        // We need to verify that:
+        // - There is at least one argument, of type String
+        // - There are as much additional arguments as there are '{}' or '{:?}' in the string, whatever the types (at least for now)
+        // - Every additional argument is initialized
+
+        let fn_decl = self.get_func("println!")?;
+
+        // Verifying the first argument
+        if args.0.is_empty() {
+            return Err(TypeError::invalid_number_of_arguments(
+                fn_decl.clone(),
+                1,
+                0,
+            ));
+        }
+
+        let first_arg = &args.0[0];
+        let first_arg_type = self.eval_type_expr(first_arg)?;
+
+        if first_arg_type.get_type() != Type::String {
+            return Err(TypeError::invalid_argument(
+                fn_decl.clone(),
+                Parameter::new(Mutable::new(false), "s".to_string(), Type::String),
+                Type::String,
+                first_arg_type.get_type(),
+            ));
+        } else if first_arg_type.is_uninitialized() {
+            return Err(TypeError::uninitialized_variable((*first_arg).clone()));
+        }
+
+        // Counting the number of '{}' and '{:?}' in the string
+        let mut nb_args = 0;
+        let s = match first_arg {
+            Expr::Lit(Literal::String(s)) => s,
+            _ => unreachable!(),
+        };
+
+        let re = regex::Regex::new(r"(\{\})|(\{\:\?\})").unwrap(); // Matches on '{}' and '{:?}'
+        nb_args = re.find_iter(s).count();
+
+        // Verifying the number of arguments
+        if args.0.len() - 1 != nb_args {
+            return Err(TypeError::invalid_number_of_arguments(
+                fn_decl.clone(),
+                nb_args + 1,
+                args.0.len(),
+            ));
+        }
+
+        // Verifying the types of the additional arguments (any, but initialized)
+        for (i, arg) in args.0.iter().skip(1).enumerate() {
+            let arg_type = self.eval_type_expr(arg)?;
+            if arg_type.is_uninitialized() {
+                return Err(TypeError::uninitialized_variable((*arg).clone()));
+            }
+        }
+
+        Ok(TypeVal::Type(Type::Unit)) // println! returns unit
     }
 
     pub fn eval_type_expr(&mut self, expr: &Expr) -> Result<TypeVal, TypeError> {
@@ -541,7 +619,7 @@ impl TVM {
                 }
 
                 op.eval_type(left_type, right_type)
-            },
+            }
             Expr::UnOp(op, operand) => {
                 let operand_type = self.eval_type_expr(operand)?;
                 // If it is uninitialized, we have an issue and won't be able to apply the unary operation
@@ -550,7 +628,7 @@ impl TVM {
                 }
 
                 op.eval_type(operand_type)
-            },
+            }
             Expr::Par(expr) => self.eval_type_expr(expr),
             Expr::Call(name, args) => {
                 // We need to check:
@@ -562,6 +640,10 @@ impl TVM {
                 //TODO: What about macros and intrinsics? For instance, what about the 'println!' macro?
                 let func = self.get_func(name)?;
                 let params = &func.parameters;
+
+                if let Some(intrinsic) = self.intrinsics.get(name) {
+                    return self.check_intrinsic_call(name, args);
+                }
 
                 let nb_args = args.0.len();
                 let nb_params = params.0.len();
@@ -590,7 +672,7 @@ impl TVM {
 
                 // The function is correctly called, returning its type
                 Ok(TypeVal::from(func.get_return_type()))
-            },
+            }
             Expr::IfThenElse(cond, then_block, else_block) => {
                 // Here, we have to verify that:
                 // - condition is a boolean
@@ -600,7 +682,10 @@ impl TVM {
 
                 // It should be an initialized boolean
                 if cond_type.get_type() != Type::Bool {
-                    return Err(TypeError::invalid_if_condition((**cond).clone(),cond_type.get_type()));
+                    return Err(TypeError::invalid_if_condition(
+                        (**cond).clone(),
+                        cond_type.get_type(),
+                    ));
                 } else if cond_type.is_uninitialized() {
                     return Err(TypeError::uninitialized_variable((**cond).clone()));
                 }
@@ -620,7 +705,7 @@ impl TVM {
                 }
 
                 Ok(then_type)
-            },
+            }
             Expr::Block(block) => self.eval_type_block(block),
             _ => unimplemented!("type eval not implemented for expression {:?}", expr),
         }
@@ -668,7 +753,7 @@ impl TVM {
                 // Types are correct
                 // Then, we can define the variable in the current scope
 
-                if let None = expr{
+                if let None = expr {
                     // The variable is uninitialized
                     val = TypeVal::uninitialized_type(val);
                 }
@@ -681,7 +766,7 @@ impl TVM {
                 self.define_var(name, val)?;
 
                 Ok(TypeVal::Type(Type::Unit)) // Let statement returns unit
-            },
+            }
             Statement::Assign(left, right) => {
                 // We have to check that the left expression is a variable and that the right expression is of the same type
                 // The left expression can either be a mutable, or an uninitialized variable
@@ -694,9 +779,9 @@ impl TVM {
                         if !left_type.is_mutable() && !left_type.is_uninitialized() {
                             return Err(TypeError::assignment_invalid_left_expr((*left).clone()));
                         }
-                        
+
                         let right_type = self.eval_type_expr(right)?;
-                        
+
                         // It must be of correct initialized type
                         if right_type.get_type() != left_type.get_type() {
                             return Err(TypeError::assignment_type_mismatch(
@@ -707,31 +792,33 @@ impl TVM {
                         } else if right_type.is_uninitialized() {
                             return Err(TypeError::uninitialized_variable((*right).clone()));
                         }
-                        
+
                         // Everything is correct, we can assign the value
                         // If left expr was uninitialized, it is now initialized
                         if left_type.is_uninitialized() {
                             self.init_var(name)?;
                         }
-                        
+
                         Ok(TypeVal::Type(Type::Unit)) // Assign statement returns unit
-                    },
+                    }
                     Expr::BinOp(BinOp::Get, l, r) => {
                         // Can only be an array.get() expression
                         // Left val should be an array identifier
                         let l_expr = *(l.clone());
                         match l_expr {
                             Expr::Ident(ident) => {
-
                                 let l_type_val = self.eval_type_expr(l)?;
                                 let l_type = l_type_val.get_type();
                                 // It should be a mutable array
                                 if !l_type_val.is_mutable() {
-                                    return Err(TypeError::assignment_invalid_left_expr((*left).clone()));
+                                    return Err(TypeError::assignment_invalid_left_expr(
+                                        (*left).clone(),
+                                    ));
                                 }
                                 if let Type::Array(_, _) = l_type {
-                                } else { // I don't know how to write the negation above...
-                                    return Err(TypeError::invalid_type(Type::GenericArray, l_type))
+                                } else {
+                                    // I don't know how to write the negation above...
+                                    return Err(TypeError::invalid_type(Type::GenericArray, l_type));
                                 }
 
                                 let index_type = self.eval_type_expr(r)?;
@@ -740,7 +827,10 @@ impl TVM {
                                 // Should check that index is an integer
                                 // TODO: Should also check that it is in the bounds, right?
                                 if index_type.get_type() != Type::I32 {
-                                    return Err(TypeError::array_invalid_index(*(r.clone()),index_type.get_type()));
+                                    return Err(TypeError::array_invalid_index(
+                                        *(r.clone()),
+                                        index_type.get_type(),
+                                    ));
                                 }
 
                                 // Should check that the value is of the same type as the array
@@ -750,17 +840,25 @@ impl TVM {
                                 };
 
                                 if val.get_type() != inner_type {
-                                    return Err(TypeError::assignment_type_mismatch((*right).clone(), inner_type, val.get_type()))
+                                    return Err(TypeError::assignment_type_mismatch(
+                                        (*right).clone(),
+                                        inner_type,
+                                        val.get_type(),
+                                    ));
                                 }
 
                                 Ok(TypeVal::Type(Type::Unit)) // Assign statement returns unit
                             }
-                            _ => return Err(TypeError::assignment_invalid_left_expr((*left).clone())),
+                            _ => {
+                                return Err(TypeError::assignment_invalid_left_expr(
+                                    (*left).clone(),
+                                ))
+                            }
                         }
-                    },
+                    }
                     _ => return Err(TypeError::assignment_invalid_left_expr((*left).clone())),
                 }
-            },
+            }
             Statement::While(cond, block) => {
                 // We should verify that the condition is an initialized boolean
                 // And that the block returns unit
@@ -768,7 +866,10 @@ impl TVM {
 
                 // It should be an initialized boolean
                 if cond_type.get_type() != Type::Bool {
-                    return Err(TypeError::invalid_while_condition((*cond).clone(),cond_type.get_type()));
+                    return Err(TypeError::invalid_while_condition(
+                        (*cond).clone(),
+                        cond_type.get_type(),
+                    ));
                 } else if cond_type.is_uninitialized() {
                     return Err(TypeError::uninitialized_variable((*cond).clone()));
                 }
@@ -780,7 +881,7 @@ impl TVM {
                 }
 
                 Ok(TypeVal::Type(Type::Unit)) // While statement returns unit
-            },
+            }
             Statement::Expr(expr) => self.eval_type_expr(expr),
             Statement::Fn(fn_decl) => {
                 self.define_func(&fn_decl)?;
@@ -815,7 +916,7 @@ impl TVM {
                     if index == size - 1 && !block.semi {
                         // last statement
                         result_type = self.eval_type_stmt(stmt)?; // Should always be an expression or assignment evaluation
-                                                             // (Will be checked by the type checker if I am correct)
+                                                                  // (Will be checked by the type checker if I am correct)
                     } else {
                         self.eval_type_stmt(stmt)?;
                     }

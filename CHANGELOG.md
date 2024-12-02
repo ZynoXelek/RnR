@@ -45,10 +45,13 @@ YOUR CHANGES/ADDED FEATURES HERE
 
 - Implement Type VM for most cases, from basic `Expr` to entire `Prog`. It has array support in a similar way as the eval VM. Still need to add more tests and support nicely intrinsics.
 
+## 2024-12-02
+
+- Add support for `println!()` type checking. Counts the number of required arguments based on the number of `{}` or `{:?}` found in the string.
+
 ## TODO
 
-- Add more type tests
-- Add better support for intrinsics in type check
+- Implement references
 - Add support for CONSTANT expression in array size, and any non unit type expression in the init value during array definition.
 - May want to add usize type for indexing (would be useful for ranges as well). May need to add "as" keyword then to convert i32 to usize.
 - Add return statement to be able to return from a while.
@@ -56,7 +59,6 @@ YOUR CHANGES/ADDED FEATURES HERE
 - Add for loops. (Need to add ranges then, which could benefit from the usize type)
 - Improve custom errors?
 - Implement custom struct?
-- Implement references?
 - Optimize some evaluations?
 - Improve arrays in EBNF?
 - Write SOS file

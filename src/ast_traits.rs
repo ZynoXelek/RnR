@@ -449,6 +449,12 @@ impl fmt::Display for UnOp {
 //?#                                                                                               #
 //?#################################################################################################
 
+impl Mutable {
+    pub fn new(b: bool) -> Self {
+        Mutable(b)
+    }
+}
+
 impl fmt::Display for Mutable {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
