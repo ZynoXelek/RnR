@@ -578,7 +578,8 @@ impl TVM {
             _ => unreachable!(),
         };
 
-        let re = regex::Regex::new(r"(\{\})|(\{\:\?\})").unwrap(); // Matches on '{}' and '{:?}'
+        // Matches on '{}' and '{:?}', but should not match on '{{}}' or '{{:?}}'
+        let re = regex::Regex::new(r"(\{\})|(\{\:\?\})").unwrap();
         nb_args = re.find_iter(s).count();
 
         // Verifying the number of arguments

@@ -265,7 +265,7 @@ mod test_tvm {
                 }
                 let a = f(1, 2);
                 println!(\"a = {} and another a = {}\", a, a);
-                println!(\"But also some random test to be sure it is correctly implemented...\");
+                println!(\"But also some random test to be sure it is {{correctly}} implemented...\"); // escaped brackets
             }
             ",
         );
@@ -652,6 +652,20 @@ mod test_tvm {
             {
                 let a: i32;
                 println!(\"a is {}\", a); // Should crash (uninitialized variable)
+            }
+            ",
+        );
+
+        assert_eq!(v.unwrap().get_initialized_type(), Type::Unit);
+    }
+
+    #[test]
+    #[should_panic]
+    fn test_invalid_println_call5() {
+        let v = parse_type::<Block, TypeVal>(
+            "
+            {
+                println!(\"{{{}}}\"); // Should crash (not enough arguments: need 1 more than the string)
             }
             ",
         );
