@@ -27,25 +27,25 @@ YOUR CHANGES/ADDED FEATURES HERE
 
 - WIP on arrays. Can now be declared (including using syntax `[len; init]`), modified and used. However, length is not used nor verified yet
 
-## 2024-11-25
+## 2024-11-25
 
 - Add custom errors for handling parser issues
 - Add custom errors for handling evaluation issues
   
-## 2024-11-26
+## 2024-11-26
 
 - Add size data to arrays. For now, it is still using `Vec<Literal>` for convenience, but may be changed later?
 - Add arrays to EBNF (May need to improve it later)
 
-## 2024-11-27
+## 2024-11-27
 
 - Fix array special definition, which was in the wrong order. Correct order is `[init; len]`. Need to add support for expr later on.
 
-## 2024-11-29
+## 2024-11-29
 
 - Implement Type VM for most cases, from basic `Expr` to entire `Prog`. It has array support in a similar way as the eval VM. Still need to add more tests and support nicely intrinsics.
 
-## 2024-12-02
+## 2024-12-02
 
 - Add support for `println!()` type checking. Counts the number of required arguments based on the number of `{}` or `{:?}` found in the string.
 
