@@ -52,6 +52,7 @@ YOUR CHANGES/ADDED FEATURES HERE
 ## TODO
 
 - Implement references
+- Write type rules
 - Add support for CONSTANT expression in array size, and any non unit type expression in the init value during array definition.
 - May want to add usize type for indexing (would be useful for ranges as well). May need to add "as" keyword then to convert i32 to usize.
 - Add return statement to be able to return from a while.
