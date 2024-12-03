@@ -407,9 +407,9 @@ mod test_parse_expr {
         parse::<Expr>("(1) + (2)");
         parse::<Expr>("(1 + 2) + (3 + 4)");
         parse::<Expr>("(1 * 2) - (3 / 4)");
-        parse::<Expr>("true || false");
-        parse::<Expr>("true && false");
-        parse::<Expr>("true && (false || true) && false");
+        parse::<Expr>("true || !false");
+        parse::<Expr>("!true && false");
+        parse::<Expr>("true && (!false || true) && false");
     }
 
     #[test]
@@ -611,6 +611,76 @@ mod test_parse_expr {
     fn precedence_and_associativity_321() {
         let expr: Expr = parse("true == true && true || true");
         let expected = or(and(eq(true, true), true), true);
+        assert_eq!(expr, expected);
+    }
+
+    #[test]
+    fn array_access_expr_with_array() {
+        // let a = [true, false][[1, 0][1]]; // This is valid Rust code, which would give true.
+
+        let expr: Expr = parse("[true, false][[1, 0][1]]");
+        let expected = {
+            let array = Expr::Lit(Literal::Array(
+                vec![Literal::Bool(true), Literal::Bool(false)],
+                2,
+            ));
+            let array_idx = Expr::Lit(Literal::Array(
+                vec![Literal::Int(1), Literal::Int(0)],
+                2,
+            ));
+            let index = Expr::bin_op(BinOp::Get, array_idx, Expr::Lit(Literal::Int(1)));
+            Expr::bin_op(BinOp::Get, array, index)
+        };
+        assert_eq!(expr, expected);
+    }
+
+    #[test]
+    fn array_access_expr_with_unary_operation_1() {
+        // let a = ![true, false][0]; // This is valid Rust code, which would give false.
+
+        let expr: Expr = parse("![true, false][0]");
+        let expected = {
+            let array = Expr::Lit(Literal::Array(
+                vec![Literal::Bool(true), Literal::Bool(false)],
+                2,
+            ));
+            let index = Expr::Lit(Literal::Int(0));
+            Expr::UnOp(UnOp::Bang, Box::new(Expr::bin_op(BinOp::Get, array, index)))
+        };
+        assert_eq!(expr, expected);
+    }
+
+    #[test]
+    fn array_access_expr_with_unary_operation_2() {
+        // let a = true && ![true, false][0]; // This is valid Rust code, which would give false.
+
+        let expr: Expr = parse("true && ![true, false][0]");
+        let expected = {
+            let array = Expr::Lit(Literal::Array(
+                vec![Literal::Bool(true), Literal::Bool(false)],
+                2,
+            ));
+            let index = Expr::Lit(Literal::Int(0));
+            let right_operand = Expr::UnOp(UnOp::Bang, Box::new(Expr::bin_op(BinOp::Get, array, index)));
+            Expr::bin_op(BinOp::And, Expr::Lit(Literal::Bool(true)), right_operand)
+        };
+        assert_eq!(expr, expected);
+    }
+
+    #[test]
+    fn array_access_expr_with_unary_operation_3() {
+        // let a = ![true, false][0] || true; // This is valid Rust code, which would give true.
+
+        let expr: Expr = parse("![true, false][0] || true");
+        let expected = {
+            let array = Expr::Lit(Literal::Array(
+                vec![Literal::Bool(true), Literal::Bool(false)],
+                2,
+            ));
+            let index = Expr::Lit(Literal::Int(0));
+            let left_operand = Expr::UnOp(UnOp::Bang, Box::new(Expr::bin_op(BinOp::Get, array, index)));
+            Expr::bin_op(BinOp::Or, left_operand, Expr::Lit(Literal::Bool(true)))
+        };
         assert_eq!(expr, expected);
     }
 }

@@ -322,9 +322,14 @@ fn parse_operand(input: ParseStream) -> Result<Expr> {
 
     if peek_unop(input) {
         // This should parse unary operators such as `!true`, `-3`, etc.
+        // However, array access reverses the order: ![true, false][0] -> !true
         let op: UnOp = input.parse()?;
         let operand = parse_operand(input)?;
-        Ok(Expr::un_op(op, operand))
+
+        // To support binary operations with higher priority (For instance, array access)
+        let final_operand = parse_binary_op_expr(input, operand, op.priority()).unwrap();
+
+        Ok(Expr::un_op(op, final_operand))
     } else if input.peek(syn::token::Paren) {
         // This should parse expressions in parentheses, such as `(1 + 2)`
         // Be aware that it will also match unit type `()`
@@ -609,18 +614,8 @@ impl Parse for Type {
         if input.peek(syn::Ident) {
             let id: syn::Ident = input.parse()?;
             typename = id.to_string();
-
-            // Check if the next token is a <> to support arrays
-            if input.peek(Token![<]) {
-                let _: Token![<] = input.parse()?;
-
-                // Get the inner type of the array
-                let inner_type: Type = input.parse()?;
-
-                let _: Token![>] = input.parse()?;
-                typename.push_str(&format!("<{}>", inner_type));
-            }
         } else if input.peek(syn::token::Bracket) {
+            // Support for array types
             let content;
             let _ = syn::bracketed!(content in input);
 

@@ -379,7 +379,7 @@ impl BinOp {
             BinOp::Ge => 3,
             BinOp::Le => 3,
             // Array operations
-            BinOp::Get => 6, // Highest priority
+            BinOp::Get => 8, // Highest priority (above unary operators as well)
             _ => unimplemented!("BinOp::priority for {:?}", self),
         }
     }
