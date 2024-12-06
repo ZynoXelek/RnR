@@ -766,11 +766,11 @@ impl TVM {
 
                 let then_type = self.eval_type_block(then_block)?;
 
-                // Stores the state after the then block
-                let then_state = self.var_env.clone();
-
                 // If there is a else block, we have to check that both blocks return the same type
                 if let Some(else_block) = else_block {
+
+                    // Stores the state after the then block
+                    let then_state = self.var_env.clone();
                     // Restores the initial state
                     self.var_env = initial_state.clone();
 
