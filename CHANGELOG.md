@@ -49,6 +49,12 @@ YOUR CHANGES/ADDED FEATURES HERE
 
 - Add support for `println!()` type checking. Counts the number of required arguments based on the number of `{}` or `{:?}` found in the string.
 
+## 2024-12-06
+
+- Fixed block parsing after I realized they were not correctly parsed as expressions when they did not finish by a semi-colon.
+- Made it so that we can declare an uninitialized variable, without even explicitly declaring its type.
+- Fixed if statements so that if a variable is initialized in a peculiar branch, it should be in the other one as well, with the same type.
+
 ## TODO
 
 - Implement references

@@ -1274,6 +1274,49 @@ mod test_parse_block {
     }
 
     #[test]
+    fn test_block_in_block() {
+        let ts: proc_macro2::TokenStream = "
+        {
+            let a : i32 = 1;
+            {
+                let b: i32 = 2;
+                a = b + a;
+            }
+            a = 5;
+            a + 5
+        }"
+        .parse()
+        .unwrap();
+        let bl: Block = syn::parse2(ts).unwrap();
+        println!("bl {:?}", bl);
+        println!("bl (pretty printing)\n{}", bl);
+        assert_eq!(bl.statements.len(), 4);
+        assert!(!bl.semi);
+    }
+
+    #[test]
+    fn test_block_if() {
+        let ts: proc_macro2::TokenStream = "
+        {
+            let a : i32 = 1;
+            if true {
+                a = 5;
+            } else {
+                a = 6;
+            }
+            a = 5;
+            a + 5
+        }"
+        .parse()
+        .unwrap();
+        let bl: Block = syn::parse2(ts).unwrap();
+        println!("bl {:?}", bl);
+        println!("bl (pretty printing)\n{}", bl);
+        assert_eq!(bl.statements.len(), 4);
+        assert!(!bl.semi);
+    }
+
+    #[test]
     fn test_block2() {
         let ts: proc_macro2::TokenStream = "{ let b : bool = false; b = true }".parse().unwrap();
         let bl: Block = syn::parse2(ts).unwrap();

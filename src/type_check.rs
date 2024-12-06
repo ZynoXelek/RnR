@@ -20,7 +20,7 @@ use crate::intrinsics::*;
 #[derive(Debug, Clone, PartialEq)]
 pub enum TypeVal {
     Type(Type),
-    Uninit(Type),      // Will allow to check for uninitialized variables
+    Uninit(Option<Type>),      // Will allow to check for uninitialized variables
     Mut(Box<TypeVal>), // Will allow to check for assignments to mutable variables
 }
 
@@ -62,6 +62,11 @@ impl From<Parameter> for TypeVal {
 //? Helpers
 
 impl TypeVal {
+
+    pub fn uninitialized() -> TypeVal {
+        TypeVal::Uninit(None)
+    }
+
     pub fn mutable_type(t: TypeVal) -> TypeVal {
         match t {
             TypeVal::Mut(_) => t, // Useless to make a mutable type mutable
@@ -71,7 +76,7 @@ impl TypeVal {
 
     pub fn uninitialized_type(t: TypeVal) -> TypeVal {
         match t {
-            TypeVal::Type(t) => TypeVal::Uninit(t),
+            TypeVal::Type(t) => TypeVal::Uninit(Some(t)),
             TypeVal::Mut(t) => TypeVal::mutable_type(TypeVal::uninitialized_type(*t)),
             TypeVal::Uninit(_) => t, // Already uninitialized
         }
@@ -79,7 +84,12 @@ impl TypeVal {
 
     pub fn initialized_type(t: TypeVal) -> TypeVal {
         match t {
-            TypeVal::Uninit(t) => TypeVal::Type(t),
+            TypeVal::Uninit(t) => {
+                match t {
+                    Some(t) => TypeVal::Type(t),
+                    None => panic!("Can't initialize an uninitialized and undefined type"),
+                }
+            },
             TypeVal::Mut(t) => TypeVal::mutable_type(TypeVal::initialized_type(*t)),
             TypeVal::Type(_) => t, // Already initialized
         }
@@ -100,9 +110,9 @@ impl TypeVal {
         }
     }
 
-    pub fn get_type(&self) -> Type {
+    pub fn get_type(&self) -> Option<Type> {
         match self {
-            TypeVal::Type(t) => t.clone(),
+            TypeVal::Type(t) => Some(t.clone()),
             TypeVal::Uninit(t) => t.clone(),
             TypeVal::Mut(t) => t.get_type(),
         }
@@ -113,7 +123,7 @@ impl TypeVal {
     pub fn get_initialized_type(&self) -> Type {
         match self {
             TypeVal::Type(t) => t.clone(),
-            TypeVal::Uninit(t) => panic!("Uninitialized type"),
+            TypeVal::Uninit(_) => panic!("Uninitialized type"),
             TypeVal::Mut(t) => t.get_initialized_type(),
         }
     }
@@ -123,7 +133,13 @@ impl fmt::Display for TypeVal {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
             TypeVal::Type(t) => write!(f, "{}", t),
-            TypeVal::Uninit(t) => write!(f, "Uninit({})", t),
+            TypeVal::Uninit(t) => {
+                if let Some(t) = t {
+                    write!(f, "Uninit({})", t)
+                } else {
+                    write!(f, "Uninit(_)")
+                }
+            },
             TypeVal::Mut(t) => write!(f, "Mut({})", t),
         }
     }
@@ -140,8 +156,8 @@ impl fmt::Display for TypeVal {
 impl BinOp {
     pub fn eval_type(&self, left: TypeVal, right: TypeVal) -> Result<TypeVal, TypeError> {
         // Here, we don't worry about uninitialized variables, as the type checker will have already checked that before calling this
-        let left_type = left.get_type();
-        let right_type = right.get_type();
+        let left_type = left.get_type().unwrap();
+        let right_type = right.get_type().unwrap();
 
         match self {
             // Integer only operations
@@ -195,7 +211,6 @@ impl BinOp {
             // Array operations
             BinOp::Get => match (left_type.clone(), right_type.clone()) {
                 (Type::Array(t, _), Type::I32) => {
-                    //TODO: How to check in bounds? Should we during type check?
                     Ok(TypeVal::Type(*t))
                 }
                 _ => Err(TypeError::binop_type_mismatch(
@@ -214,7 +229,7 @@ impl BinOp {
 impl UnOp {
     fn eval_type(&self, operand: TypeVal) -> Result<TypeVal, TypeError> {
         // Here, we don't worry about uninitialized variables, as the type checker will have already checked that before calling this
-        let operand_type = operand.get_type();
+        let operand_type = operand.get_type().unwrap();
 
         match self {
             UnOp::Neg => {
@@ -312,7 +327,7 @@ where
     fn eval(&self) -> Result<Type, EvalError> {
         let type_val_res = self.eval_type();
         match type_val_res {
-            Ok(type_val) => Ok(type_val.get_type()),
+            Ok(type_val) => Ok(type_val.get_type().unwrap()),
             Err(e) => {
                 return Err(EvalError::type_error(e));
             }
@@ -386,6 +401,46 @@ impl TVM {
         self.func_env.pop();
     }
 
+    // This function can compare an initial state, with the states extracted from the two branches of an if statement.
+    // If a uninitialized variable from the initial state is initialized in both branches, it is considered initialized.
+    // It checks that it is initialized to the same types, and initializes it in the initial state.
+    // Then, it returns the initial state with the updated variables.
+    fn check_if_branches_init(
+        mut init_state: Vec<HashMap<String, TypeVal>>,
+        then_state: Vec<HashMap<String, TypeVal>>,
+        else_state: Vec<HashMap<String, TypeVal>>,
+    ) -> Result<Vec<HashMap<String, TypeVal>>, TypeError> {
+        
+        // First, we extract the names and scope_ids of each uninitialized variable in the initial state
+        let mut uninitialized_vars: HashMap<String, usize> = HashMap::new();
+        for (scope_id, scope) in init_state.iter().enumerate() {
+            for (name, val) in scope.iter() {
+                if val.is_uninitialized() {
+                    uninitialized_vars.insert(name.clone(), scope_id);
+                }
+            }
+        }
+
+        // Then, we check if the uninitialized variables are initialized in both branches
+        for (name, scope_id) in uninitialized_vars.iter() {
+            let then_val = then_state[*scope_id].get(name).unwrap(); // It shouldn't be possible that it is not present
+            let else_val = else_state[*scope_id].get(name).unwrap(); // It shouldn't be possible that it is not present
+
+            if then_val != else_val {
+                return Err(TypeError::if_blocks_init_type_mismatch(
+                    name.clone(),
+                    then_val.clone(),
+                    else_val.clone(),
+                ));
+            }
+
+            // If everything is fine, we can initialize the variables in the initial state
+            init_state[*scope_id].insert(name.clone(), then_val.clone());
+        }
+
+        Ok(init_state)
+    }
+
     // Define a new variable in the current scope
     fn define_var(&mut self, name: &str, val: TypeVal) -> Result<(), TypeError> {
         if let Some(env) = self.var_env.last_mut() {
@@ -400,6 +455,18 @@ impl TVM {
         }
     }
 
+    // Try to fetch a variable, starting from the top of the stack, and return it with the corresponding scope where we have found it
+    fn get_var_and_scope(&self, name: &str) -> Result<(TypeVal, usize), TypeError> {
+        let nb_scopes = self.var_env.len();
+        for i in 0..nb_scopes {
+            // Reverse order to start from the top of the stack
+            if let Some(val) = self.var_env[nb_scopes - 1 - i].get(name) {
+                return Ok((val.clone(), nb_scopes - 1 - i));
+            }
+        }
+        Err(TypeError::variable_not_found(name.to_string()))
+    }
+
     // Try to fetch a variable, starting from the top of the stack
     fn get_var(&self, name: &str) -> Result<TypeVal, TypeError> {
         for env in self.var_env.iter().rev() {
@@ -410,13 +477,15 @@ impl TVM {
         Err(TypeError::variable_not_found(name.to_string()))
     }
 
-    fn init_var(&mut self, name: &str) -> Result<TypeVal, TypeError> {
-        // It is the same as getting the variable, creating the initialized type, and defining it again
-        let val = self.get_var(name)?;
-        let val = TypeVal::initialized_type(val);
-        self.define_var(name, val.clone())?;
+    fn init_var(&mut self, name: &str, ty: TypeVal) -> Result<TypeVal, TypeError> {
+        // It replaces the already defined variable with the initialized one
 
-        Ok(val)
+        let (_, scope) = self.get_var_and_scope(name)?; // Check that the variable exists
+        
+        // Now we can redefine the corresponding var
+        self.var_env[scope].insert(name.to_string(), ty.clone());
+
+        Ok(ty)
     }
 
     fn define_func(&mut self, func: &FnDeclaration) -> Result<(), TypeError> {
@@ -453,11 +522,11 @@ impl TVM {
             Type::Unit.into()
         };
 
-        if return_type.get_type() != func_type {
+        if return_type.get_type().unwrap() != func_type {
             return Err(TypeError::invalid_function_return_type(
                 func.clone(),
                 func_type,
-                return_type.get_type(),
+                return_type.get_type().unwrap(),
             ));
         }
 
@@ -560,12 +629,12 @@ impl TVM {
         let first_arg = &args.0[0];
         let first_arg_type = self.eval_type_expr(first_arg)?;
 
-        if first_arg_type.get_type() != Type::String {
+        if first_arg_type.get_type().unwrap() != Type::String {
             return Err(TypeError::invalid_argument(
                 fn_decl.clone(),
                 Parameter::new(Mutable::new(false), "s".to_string(), Type::String),
                 Type::String,
-                first_arg_type.get_type(),
+                first_arg_type.get_type().unwrap(),
             ));
         } else if first_arg_type.is_uninitialized() {
             return Err(TypeError::uninitialized_variable((*first_arg).clone()));
@@ -638,7 +707,6 @@ impl TVM {
                 // - each argument is initialized
                 // And then we can return the function type
                 // The function itself is verified at its declaration, so there is no need to check the block inside the function here
-                //TODO: What about macros and intrinsics? For instance, what about the 'println!' macro?
                 let func = self.get_func(name)?;
                 let params = &func.parameters;
 
@@ -659,12 +727,12 @@ impl TVM {
 
                 for (param, arg) in params.0.iter().zip(args.0.iter()) {
                     let arg_type = self.eval_type_expr(arg)?;
-                    if arg_type.get_type() != param.ty {
+                    if arg_type.get_type().unwrap() != param.ty {
                         return Err(TypeError::invalid_argument(
                             func.clone(),
                             param.clone(),
                             param.ty.clone(),
-                            arg_type.get_type(),
+                            arg_type.get_type().unwrap(),
                         ));
                     } else if arg_type.is_uninitialized() {
                         return Err(TypeError::uninitialized_variable((*arg).clone()));
@@ -678,14 +746,19 @@ impl TVM {
                 // Here, we have to verify that:
                 // - condition is a boolean
                 // Both blocks are correct (which will be done by the eval_type_block function) and that both return the same type
+                // It checks that any uninitialized variable before the if statement is either initialized in both branches
+                // or remains uninitialized in both branches
+
+                // Store the initial variable state
+                let initial_state = self.var_env.clone();
 
                 let cond_type = self.eval_type_expr(cond)?;
 
                 // It should be an initialized boolean
-                if cond_type.get_type() != Type::Bool {
+                if cond_type.get_type().unwrap() != Type::Bool {
                     return Err(TypeError::invalid_if_condition(
                         (**cond).clone(),
-                        cond_type.get_type(),
+                        cond_type.get_type().unwrap(),
                     ));
                 } else if cond_type.is_uninitialized() {
                     return Err(TypeError::uninitialized_variable((**cond).clone()));
@@ -693,14 +766,26 @@ impl TVM {
 
                 let then_type = self.eval_type_block(then_block)?;
 
+                // Stores the state after the then block
+                let then_state = self.var_env.clone();
+
                 // If there is a else block, we have to check that both blocks return the same type
                 if let Some(else_block) = else_block {
+                    // Restores the initial state
+                    self.var_env = initial_state.clone();
+
                     let else_type = self.eval_type_block(else_block)?;
+
+                    // Stores the state after the else block
+                    let else_state = self.var_env.clone();
+
+                    // Checks for initialized variables
+                    self.var_env = TVM::check_if_branches_init(initial_state, then_state, else_state)?;
 
                     if then_type.get_type() != else_type.get_type() {
                         return Err(TypeError::if_blocks_type_mismatch(
-                            then_type.get_type(),
-                            else_type.get_type(),
+                            then_type.get_type().unwrap(),
+                            else_type.get_type().unwrap(),
                         ));
                     }
                 }
@@ -720,16 +805,12 @@ impl TVM {
                 // If there are both a type and an expression, we have to check that the expression type is correct
                 // If there is none, it is an error
 
-                let mut val: TypeVal;
+                let mut val: TypeVal = TypeVal::uninitialized();
                 let mut expr_type: Option<Type> = None;
 
                 if let Some(e) = expr {
                     let expr_val_type = self.eval_type_expr(e)?;
-                    expr_type = Some(expr_val_type.get_type());
-                }
-
-                if ty.is_none() && expr_type.is_none() {
-                    return Err(TypeError::missing_variable_type(name.clone()));
+                    expr_type = Some(expr_val_type.get_type().unwrap());
                 }
 
                 if ty.is_some() {
@@ -747,7 +828,7 @@ impl TVM {
                         }
                     }
                     val = ty.into();
-                } else {
+                } else if expr_type.is_some() {
                     val = expr_type.unwrap().into();
                 }
 
@@ -784,11 +865,11 @@ impl TVM {
                         let right_type = self.eval_type_expr(right)?;
 
                         // It must be of correct initialized type
-                        if right_type.get_type() != left_type.get_type() {
+                        if left_type.get_type().is_some() && right_type.get_type().unwrap() != left_type.get_type().unwrap() {
                             return Err(TypeError::assignment_type_mismatch(
                                 (*right).clone(),
-                                left_type.get_type(),
-                                right_type.get_type(),
+                                left_type.get_type().unwrap(),
+                                right_type.get_type().unwrap(),
                             ));
                         } else if right_type.is_uninitialized() {
                             return Err(TypeError::uninitialized_variable((*right).clone()));
@@ -797,7 +878,7 @@ impl TVM {
                         // Everything is correct, we can assign the value
                         // If left expr was uninitialized, it is now initialized
                         if left_type.is_uninitialized() {
-                            self.init_var(name)?;
+                            self.init_var(name, right_type)?;
                         }
 
                         Ok(TypeVal::Type(Type::Unit)) // Assign statement returns unit
@@ -809,7 +890,7 @@ impl TVM {
                         match l_expr {
                             Expr::Ident(ident) => {
                                 let l_type_val = self.eval_type_expr(l)?;
-                                let l_type = l_type_val.get_type();
+                                let l_type = l_type_val.get_type().unwrap();
                                 // It should be a mutable array
                                 if !l_type_val.is_mutable() {
                                     return Err(TypeError::assignment_invalid_left_expr(
@@ -826,11 +907,10 @@ impl TVM {
                                 let val = self.eval_type_expr(right)?;
 
                                 // Should check that index is an integer
-                                // TODO: Should also check that it is in the bounds, right?
-                                if index_type.get_type() != Type::I32 {
+                                if index_type.get_type().unwrap() != Type::I32 {
                                     return Err(TypeError::array_invalid_index(
                                         *(r.clone()),
-                                        index_type.get_type(),
+                                        index_type.get_type().unwrap(),
                                     ));
                                 }
 
@@ -840,11 +920,11 @@ impl TVM {
                                     _ => unreachable!(),
                                 };
 
-                                if val.get_type() != inner_type {
+                                if val.get_type().unwrap() != inner_type {
                                     return Err(TypeError::assignment_type_mismatch(
                                         (*right).clone(),
                                         inner_type,
-                                        val.get_type(),
+                                        val.get_type().unwrap(),
                                     ));
                                 }
 
@@ -866,10 +946,10 @@ impl TVM {
                 let cond_type = self.eval_type_expr(cond)?;
 
                 // It should be an initialized boolean
-                if cond_type.get_type() != Type::Bool {
+                if cond_type.get_type().unwrap() != Type::Bool {
                     return Err(TypeError::invalid_while_condition(
                         (*cond).clone(),
-                        cond_type.get_type(),
+                        cond_type.get_type().unwrap(),
                     ));
                 } else if cond_type.is_uninitialized() {
                     return Err(TypeError::uninitialized_variable((*cond).clone()));
@@ -877,8 +957,8 @@ impl TVM {
 
                 let block_type = self.eval_type_block(block)?;
 
-                if block_type.get_type() != Type::Unit {
-                    return Err(TypeError::while_block_type_mismatch(block_type.get_type()));
+                if block_type.get_type().unwrap() != Type::Unit {
+                    return Err(TypeError::while_block_type_mismatch(block_type.get_type().unwrap()));
                 }
 
                 Ok(TypeVal::Type(Type::Unit)) // While statement returns unit

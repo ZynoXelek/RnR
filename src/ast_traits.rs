@@ -478,7 +478,13 @@ impl Statement {
             Statement::Let(_, _, _, _) => true,
             Statement::Assign(_, _) => true,
             Statement::While(_, _) => false,
-            Statement::Expr(_) => true,
+            Statement::Expr(expr) => {
+                match expr {
+                    Expr::IfThenElse(_, _, _) => false,
+                    Expr::Block(_) => false,
+                    _ => true,
+                }
+            },
             Statement::Fn(_) => false,
             _ => unimplemented!("Statement::requires_semi_colon for {:?}", self),
         }

@@ -873,7 +873,14 @@ impl Parse for Statement {
             // Parse an expression, or an assignment
             let expr: Expr = input.parse()?;
 
-            if end_of_statement(input) {
+            // If blocks and generic blocks are expression statements that do not necessarily need a semicolon
+            // They can not be followed by an assignment
+            let block_type_expr = match expr {
+                Expr::Block(_) | Expr::IfThenElse(_, _, _) => true,
+                _ => false,
+            };
+
+            if end_of_statement(input) || block_type_expr {
                 // This is an expression
                 Ok(Statement::Expr(expr))
             } else if input.peek(Token![=]) {
@@ -995,26 +1002,6 @@ fn parse_while_loops(input: ParseStream) -> Result<Statement> {
 //?#################################################################################################
 
 use syn::punctuated::Punctuated;
-
-// Here we take advantage of the parser function `parse_terminated`
-// impl Parse for Block {
-//     fn parse(input: ParseStream) -> Result<Block> {
-//         let content;
-//         let _ = syn::braced!(content in input);
-
-//         let bl: Punctuated<Statement, Token![;]> = content.parse_terminated(Statement::parse, Token![;])?;
-
-//         // We need to retrieve the semi before we collect into a vector
-//         // as into_iter consumes the value.
-//         let semi = bl.trailing_punct();
-
-//         Ok(Block {
-//             // turn the Punctuated into a vector
-//             statements: bl.into_iter().collect(),
-//             semi,
-//         })
-//     }
-// }
 
 // Here we take advantage of the parser function `parse_terminated`
 impl Parse for Block {

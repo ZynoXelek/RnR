@@ -1,4 +1,5 @@
 use crate::ast::{BinOp, Expr, FnDeclaration, Parameter, Type, UnOp};
+use crate::type_check::TypeVal;
 use crate::vm::Val;
 use core::fmt;
 use syn::Error as SynError;
@@ -369,8 +370,10 @@ pub enum TypeError {
         then_type: Type,
         else_type: Type,
     },
-    MissingVariableType {
-        name: String,
+    IfBlocksInitTypeMismatch {
+        var_identifier: String,
+        then_type: TypeVal,
+        else_type: TypeVal,
     },
     LetTypeMismatch {
         name: String,
@@ -488,8 +491,12 @@ impl TypeError {
         }
     }
 
-    pub fn missing_variable_type(name: String) -> Self {
-        TypeError::MissingVariableType { name }
+    pub fn if_blocks_init_type_mismatch(var_identifier: String, then_type: TypeVal, else_type: TypeVal) -> Self {
+        TypeError::IfBlocksInitTypeMismatch {
+            var_identifier,
+            then_type,
+            else_type,
+        }
     }
 
     pub fn let_type_mismatch(name: String, expr: Expr, expected: Type, found: Type) -> Self {
@@ -626,8 +633,16 @@ impl fmt::Display for TypeError {
                     then_type, else_type
                 )
             }
-            TypeError::MissingVariableType { name } => {
-                write!(f, "Missing variable type for '{}'. You should either specify one, or initialize it with an expression.", name)
+            TypeError::IfBlocksInitTypeMismatch {
+                var_identifier,
+                then_type,
+                else_type,
+            } => {
+                write!(
+                    f,
+                    "If blocks initialization type mismatch: variable '{}' is of type '{}' in then block while of type '{}' in else block",
+                    var_identifier, then_type, else_type
+                )
             }
             TypeError::LetTypeMismatch {
                 name,

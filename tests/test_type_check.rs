@@ -18,13 +18,77 @@ mod test_tvm {
     }
 
     #[test]
-    fn test_later_init() {
+    fn test_late_init() {
         let v = parse_type::<Block, TypeVal>(
             "
             {
                 let a: i32;
                 a = 1;
                 a
+            }
+            ",
+        );
+
+        assert_eq!(v.unwrap().get_initialized_type(), Type::I32);
+    }
+
+    #[test]
+    fn test_late_init_no_type() {
+        let v = parse_type::<Block, TypeVal>(
+            "
+            {
+                let a;
+                a = true;
+                a
+            }
+            ",
+        );
+
+        assert_eq!(v.unwrap().get_initialized_type(), Type::Bool);
+    }
+
+    #[test]
+    fn test_if_late_init() {
+        let v = parse_type::<Block, TypeVal>(
+            "
+            {
+                let a: i32;
+                if true {
+                    a = 1;
+                } else {
+                    a = 2;
+                }
+                a
+            }
+            ",
+        );
+
+        assert_eq!(v.unwrap().get_initialized_type(), Type::I32);
+    }
+
+    #[test]
+    fn test_if_late_init_more_complex() {
+        let v = parse_type::<Block, TypeVal>(
+            "
+            {
+                let a;
+                let b;
+                if true {
+                    a = 1;
+                    if true {
+                        b = 2;
+                    } else {
+                        b = 3;
+                    }
+                } else {
+                    a = 2;
+                    if true {
+                        b = 4;
+                    } else {
+                        b = 5;
+                    }
+                }
+                b
             }
             ",
         );
@@ -378,6 +442,87 @@ mod test_tvm {
             {
                 let a: i32;
                 a = true; // Should crash (wrong type)
+            }
+            ",
+        );
+
+        println!(
+            "Did not panic... v = {:?}",
+            v.unwrap().get_initialized_type()
+        );
+    }
+
+    #[test]
+    #[should_panic]
+    fn test_if_missing_late_init() {
+        let v = parse_type::<Block, TypeVal>(
+            "
+            {
+                let a: i32;
+                if true {
+                    a = 1;
+                } else {
+                    let b = 2;
+                    // no initialization for a: Should panic even if not reachable
+                }
+                a
+            }
+            ",
+        );
+
+        println!(
+            "Did not panic... v = {:?}",
+            v.unwrap().get_initialized_type()
+        );
+    }
+
+    #[test]
+    #[should_panic]
+    fn test_if_different_late_init() {
+        let v = parse_type::<Block, TypeVal>(
+            "
+            {
+                let a;
+                if true {
+                    a = 1;
+                } else {
+                    a = true; // Should crash (different types)
+                }
+                a
+            }
+            ",
+        );
+
+        println!(
+            "Did not panic... v = {:?}",
+            v.unwrap().get_initialized_type()
+        );
+    }
+
+    #[test]
+    #[should_panic]
+    fn test_if_different_late_init_complex() {
+        let v = parse_type::<Block, TypeVal>(
+            "
+            {
+                let a;
+                let b;
+                if true {
+                    a = 1;
+                    if true {
+                        b = 2;
+                    } else {
+                        b = 3;
+                    }
+                } else {
+                    a = 2;
+                    if true {
+                        b = true;
+                    } else {
+                        b = false;
+                    }
+                }
+                b
             }
             ",
         );

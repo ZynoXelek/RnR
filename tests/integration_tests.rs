@@ -382,422 +382,427 @@ mod expr {
     }
 }
 
-#[test]
-fn block_with_typed_immutable_variables_1() {
-    test_block!({
-        let x: i32 = 1;
-        let y: i32 = 2;
-        x + y
-    });
-}
+#[cfg(test)]
+mod more_tests {
+    use super::*;
 
-#[test]
-fn block_with_late_init() {
-    test_block!({
-        let x: i32;
-        let y: i32;
-        x = 1;
-        y = 2;
-        x + y
-    });
-}
+    #[test]
+    fn block_with_typed_immutable_variables_1() {
+        test_block!({
+            let x: i32 = 1;
+            let y: i32 = 2;
+            x + y
+        });
+    }
 
-#[test]
-fn block_with_typed_immutable_variables_2() {
-    test_block!({
-        let x: i32 = 1;
-        let y = 2;
-        x + y
-    });
-}
-
-#[test]
-#[allow(unused)]
-fn block_with_shadowing() {
-    test_block!({
-        let a: i32 = 1;
-        let b: i32 = 2;
-        let a: i32 = 3;
-        let b: i32 = 4;
-        a + b
-    });
-}
-
-#[test]
-#[allow(unused)]
-fn block_assign_to_mutable() {
-    test_block!({
-        let mut a: i32 = 1;
-        a = 1 + 2;
-        a
-    });
-}
-
-#[test]
-fn block_assign_to_mutable_with_if_then_else() {
-    test_block!({
-        let mut a: i32 = 1;
-        a = if a > 0 { a + 1 } else { a - 2 };
-        a
-    });
-}
-
-#[test]
-fn block_assign_to_mutable_array() {
-    test_block!({
-        let mut a: [i32; 3] = [1, 2, 3];
-        a[0] = 4;
-        a[1] = 5;
-        a[2] = 6;
-        a[0] + a[1] + a[2]
-    });
-}
-
-#[test]
-fn block_return_on_array_assignment() {
-    test_block!({
-        let mut a: [i32; 3] = [1, 2, 3];
-        a[0] = 4;
-        a[1] = 5;
-        a[2] = 6
-    });
-}
-
-#[test]
-fn block_array_alternative_def() {
-    test_block!({
-        let mut a = [6; 2]; // a == [6, 6]
-        a[0] = 4;
-        a[1]
-    });
-}
-
-#[test]
-#[ignore = "Not yet implemented. Must use literals not expr for now."]
-fn block_array_alternative_def_with_expr() {
-    test_block!({
-        // It can only use constants, not variables during expression.
-        let mut a = [5+1; 10/4]; // This should be [6; 2], so a == [6, 6]
-        a[0] = 4;
-        a[1]
-    });
-}
-
-#[test]
-#[allow(unused)]
-fn block_if_then_else_shadowing() {
-    test_block!({
-        let a: i32 = 1 + 2; // a == 3
-        let mut a: i32 = 2 + a; // a == 5
-        if true {
-            a = a - 1; // outer a == 4
-            let mut a: i32 = 0; // inner a == 0
-            a = a + 1 // inner a == 1
-        } else {
-            a = a - 1
-        };
-        a // a == 4
-    });
-}
-
-#[test]
-fn block_defining_and_calling_foo() {
-    test_block!({
-        fn foo() {}
-        foo()
-    });
-}
-
-#[test]
-fn block_defining_and_calling_bar() {
-    test_block!({
-        fn bar() -> i32 {
-            47
-        }
-        bar()
-    });
-}
-
-#[test]
-fn block_defining_and_calling_add_with_literals() {
-    test_block!({
-        fn add(a: i32, b: i32) -> i32 {
-            a + b
-        }
-        add(1, 2)
-    });
-}
-
-#[test]
-fn block_defining_and_calling_add_with_vars() {
-    test_block!({
-            assert_eq!(x, 1);
-            assert_eq!(y, 2);
-            assert_eq!(add(x, y), 3);
-        },
-        fn add(a: i32, b: i32) -> i32 {
-            a + b
-        },
-        let x: i32 = 1,
-        let y: i32 = 2;
-        add(x, y)
-    );
-}
-
-#[test]
-fn block_calling_foo_before_definition() {
-    test_block!({
-        foo();
-        fn foo() {}
-    });
-}
-
-#[test]
-fn block_calling_bar_before_definition() {
-    test_block!({
-        let x = bar();
-        fn bar() -> i32 {
-            47
-        }
-        x
-    });
-}
-
-#[test]
-#[allow(unused)]
-fn late_initialization() {
-    test_block!({
-        let x;
-        let y;
-        if true {
+    #[test]
+    fn block_with_late_init() {
+        test_block!({
+            let x: i32;
+            let y: i32;
             x = 1;
-            y = true;
-        } else {
-            x = 0;
-            y = false;
-        }
-    });
-}
+            y = 2;
+            x + y
+        });
+    }
 
-/// This one is a bit surprising. Seems to be very similar to `late_init_in_ifelse_fail()` in
-/// `type_check_fail.rs`, but Rust is happy with this one.
-//#[ignore = "weird"]
-#[test]
-#[allow(unused)]
-fn late_init_in_ifelse_ok() {
-    test_block!({
-        let x;
-        let y;
-        if true {
-            x = 1;
+    #[test]
+    fn block_with_typed_immutable_variables_2() {
+        test_block!({
+            let x: i32 = 1;
+            let y = 2;
+            x + y
+        });
+    }
+
+    #[test]
+    #[allow(unused)]
+    fn block_with_shadowing() {
+        test_block!({
+            let a: i32 = 1;
+            let b: i32 = 2;
+            let a: i32 = 3;
+            let b: i32 = 4;
+            a + b
+        });
+    }
+
+    #[test]
+    #[allow(unused)]
+    fn block_assign_to_mutable() {
+        test_block!({
+            let mut a: i32 = 1;
+            a = 1 + 2;
+            a
+        });
+    }
+
+    #[test]
+    fn block_assign_to_mutable_with_if_then_else() {
+        test_block!({
+            let mut a: i32 = 1;
+            a = if a > 0 { a + 1 } else { a - 2 };
+            a
+        });
+    }
+
+    #[test]
+    fn block_assign_to_mutable_array() {
+        test_block!({
+            let mut a: [i32; 3] = [1, 2, 3];
+            a[0] = 4;
+            a[1] = 5;
+            a[2] = 6;
+            a[0] + a[1] + a[2]
+        });
+    }
+
+    #[test]
+    fn block_return_on_array_assignment() {
+        test_block!({
+            let mut a: [i32; 3] = [1, 2, 3];
+            a[0] = 4;
+            a[1] = 5;
+            a[2] = 6
+        });
+    }
+
+    #[test]
+    fn block_array_alternative_def() {
+        test_block!({
+            let mut a = [6; 2]; // a == [6, 6]
+            a[0] = 4;
+            a[1]
+        });
+    }
+
+    #[test]
+    #[ignore = "Not yet implemented. Must use literals not expr for now."]
+    fn block_array_alternative_def_with_expr() {
+        test_block!({
+            // It can only use constants, not variables during expression.
+            let mut a = [5+1; 10/4]; // This should be [6; 2], so a == [6, 6]
+            a[0] = 4;
+            a[1]
+        });
+    }
+
+    #[test]
+    #[allow(unused)]
+    fn block_if_then_else_shadowing() {
+        test_block!({
+            let a: i32 = 1 + 2; // a == 3
+            let mut a: i32 = 2 + a; // a == 5
             if true {
-                y = true;
+                a = a - 1; // outer a == 4
+                let mut a: i32 = 0; // inner a == 0
+                a = a + 1 // inner a == 1
             } else {
-                y = false;
-            }
-        } else {
-            x = 0;
-            if true {
-                y = true;
-            } else {
-                y = false;
-            }
-        }
-    });
-}
+                a = a - 1
+            };
+            a // a == 4
+        });
+    }
 
-/// Uses if / else if / else shorthand.
-#[test]
-fn signum() {
-    test_block!({
-        // Here's a block of tests that test the code below.
-        assert_eq!(a, 1);
-        assert_eq!(b, -1);
-        assert_eq!(c, 0);
-        },
-        // Here is one statement.
-        fn signum(x: i32) -> i32 {
-            if x < 0 {
-                -1
-            } else if x > 0 {
-                1
-            } else {
-                0
-            }
-        },
-        // Another statement.
-        let a = signum(4),
-        let b = signum(-5),
-        // Last statement. (Note the ;)
-        let c = signum(0);
-        // Finally, the last expression of the block.
-        a + b + c
-    );
-}
+    #[test]
+    fn block_defining_and_calling_foo() {
+        test_block!({
+            fn foo() {}
+            foo()
+        });
+    }
 
-/// Simplest version of the GCD function.
-/// - Functions defined before they are used.
-/// - No references.
-/// - No recursion.
-/// - No shadowing (neither variables nor functions).
-#[test]
-fn gcd_easy() {
-    test_block!({
-            // Tests
-            assert_eq!(min(3, 7), 3);
-            assert_eq!(max(3, 7), 7);
-            assert_eq!(abs(3), 3);
-            assert_eq!(abs(-3), 3);
-            assert_eq!(gcd(5, 7), 1);
-            assert_eq!(gcd(12, 18), 6);
-        },
-        fn min(x: i32, y: i32) -> i32 {
-            if x < y {
-                x
-            } else {
-                y
+    #[test]
+    fn block_defining_and_calling_bar() {
+        test_block!({
+            fn bar() -> i32 {
+                47
             }
-        },
-        fn max(x: i32, y: i32) -> i32 {
-            if x > y {
-                x
-            } else {
-                y
+            bar()
+        });
+    }
+
+    #[test]
+    fn block_defining_and_calling_add_with_literals() {
+        test_block!({
+            fn add(a: i32, b: i32) -> i32 {
+                a + b
             }
-        },
-        fn abs(x: i32) -> i32 {
-            if x < 0 {
-                0 - x   // no -x unary op
-            } else {
-                x
-            }
-        },
-        fn gcd(mut x: i32, mut y: i32) -> i32 {
-            x = abs(x);
-            y = abs(y);
-            let mut cont = true;
-            while cont {
-                //(x, y) = (min(x, y), max(x, y));
-                let tmp_x = x;
-                let tmp_y = y;
-                x = min(tmp_x, tmp_y);
-                y = max(tmp_x, tmp_y);
-                if (x == y) || (x == 1) {
-                    cont = false; // return x
-                };
-                y = y - x;
+            add(1, 2)
+        });
+    }
+
+    #[test]
+    fn block_defining_and_calling_add_with_vars() {
+        test_block!({
+                assert_eq!(x, 1);
+                assert_eq!(y, 2);
+                assert_eq!(add(x, y), 3);
+            },
+            fn add(a: i32, b: i32) -> i32 {
+                a + b
+            },
+            let x: i32 = 1,
+            let y: i32 = 2;
+            add(x, y)
+        );
+    }
+
+    #[test]
+    fn block_calling_foo_before_definition() {
+        test_block!({
+            foo();
+            fn foo() {}
+        });
+    }
+
+    #[test]
+    fn block_calling_bar_before_definition() {
+        test_block!({
+            let x = bar();
+            fn bar() -> i32 {
+                47
             }
             x
-        };
-        gcd(12, 18)
-    );
-}
+        });
+    }
 
-/// Slightly more difficult version of the GCD function.
-/// - Calls functions before they are defined.
-/// - Defines nested functions.
-/// - Does not rely on parsing with proper precedence.
-#[test]
-fn gcd_medium() {
-    test_block!({
-            assert_eq!(gcd(-5, 7), 1);
-            assert_eq!(gcd(12, -18), 6);
-        },
-        fn gcd(mut x: i32, mut y: i32) -> i32 {
-            x = abs(x);
-            y = abs(y);
-            let mut cont = true;
-            while cont {
-                //(x, y) = (min(x, y), max(x, y));
-                let tmp_x = x;
-                let tmp_y = y;
-                x = min(tmp_x, tmp_y);
-                y = max(tmp_x, tmp_y);
-                if (x == y) || (x == 1) {
-                    cont = false; // return x
-                };
-                y = y - x;
+    #[test]
+    #[allow(unused)]
+    fn late_initialization() {
+        test_block!({
+            let x;
+            let y;
+            if true {
+                x = 1;
+                y = true;
+            } else {
+                x = 0;
+                y = false;
             }
+        });
+    }
+
+    /// This one is a bit surprising. Seems to be very similar to `late_init_in_ifelse_fail()` in
+    /// `type_check_fail.rs`, but Rust is happy with this one.
+    //#[ignore = "weird"]
+    #[test]
+    #[allow(unused)]
+    fn late_init_in_ifelse_ok() {
+        test_block!({
+            let x;
+            let y;
+            if true {
+                x = 1;
+                if true {
+                    y = true;
+                } else {
+                    y = false;
+                }
+            } else {
+                x = 0;
+                if true {
+                    y = true;
+                } else {
+                    y = false;
+                }
+            }
+        });
+    }
+
+    /// Uses if / else if / else shorthand.
+    #[test]
+    fn signum() {
+        test_block!({
+            // Here's a block of tests that test the code below.
+            assert_eq!(a, 1);
+            assert_eq!(b, -1);
+            assert_eq!(c, 0);
+            },
+            // Here is one statement.
+            fn signum(x: i32) -> i32 {
+                if x < 0 {
+                    -1
+                } else if x > 0 {
+                    1
+                } else {
+                    0
+                }
+            },
+            // Another statement.
+            let a = signum(4),
+            let b = signum(-5),
+            // Last statement. (Note the ;)
+            let c = signum(0);
+            // Finally, the last expression of the block.
+            a + b + c
+        );
+    }
+
+    /// Simplest version of the GCD function.
+    /// - Functions defined before they are used.
+    /// - No references.
+    /// - No recursion.
+    /// - No shadowing (neither variables nor functions).
+    #[test]
+    fn gcd_easy() {
+        test_block!({
+                // Tests
+                assert_eq!(min(3, 7), 3);
+                assert_eq!(max(3, 7), 7);
+                assert_eq!(abs(3), 3);
+                assert_eq!(abs(-3), 3);
+                assert_eq!(gcd(5, 7), 1);
+                assert_eq!(gcd(12, 18), 6);
+            },
             fn min(x: i32, y: i32) -> i32 {
                 if x < y {
                     x
                 } else {
                     y
                 }
-            }
+            },
             fn max(x: i32, y: i32) -> i32 {
                 if x > y {
                     x
                 } else {
                     y
                 }
-            }
+            },
             fn abs(x: i32) -> i32 {
                 if x < 0 {
                     0 - x   // no -x unary op
                 } else {
                     x
                 }
-            }
-            x
-        };
-        gcd(12, 18)
-    );
-}
-
-/// Even more difficult version of the GCD function.
-/// - Calls functions before they are defined.
-/// - Defines nested functions.
-/// - Shadows an outer function.
-/// - Calls the shadowing function recursively.
-/// - Uses unary operator `-x`.
-/// - Shadows variables.
-/// - Relies on expressions being parsed properly (with correct precedence).
-#[test]
-fn gcd_hard() {
-    test_block!({
-            assert_eq!(gcd(-5, 7), 1);
-            assert_eq!(gcd(36, 18), 18);
-            assert_eq!(gcd(12, -18), 6);
-        },
-        fn gcd(x: i32, y: i32) -> i32 {
-            let result = gcd(abs(x), abs(y));
-            fn gcd(x: i32, y: i32) -> i32 {
-                if x == y || x == 1 {
-                    x
-                } else {
+            },
+            fn gcd(mut x: i32, mut y: i32) -> i32 {
+                x = abs(x);
+                y = abs(y);
+                let mut cont = true;
+                while cont {
+                    //(x, y) = (min(x, y), max(x, y));
                     let tmp_x = x;
                     let tmp_y = y;
-                    let x = min(tmp_x, tmp_y);
-                    let y = max(tmp_x, tmp_y);
-                    gcd(x, y - x)
+                    x = min(tmp_x, tmp_y);
+                    y = max(tmp_x, tmp_y);
+                    if (x == y) || (x == 1) {
+                        cont = false; // return x
+                    };
+                    y = y - x;
                 }
-            }
-            fn min(x: i32, y: i32) -> i32 {
-                if x < y {
-                    x
-                } else {
-                    y
+                x
+            };
+            gcd(12, 18)
+        );
+    }
+
+    /// Slightly more difficult version of the GCD function.
+    /// - Calls functions before they are defined.
+    /// - Defines nested functions.
+    /// - Does not rely on parsing with proper precedence.
+    #[test]
+    fn gcd_medium() {
+        test_block!({
+                assert_eq!(gcd(-5, 7), 1);
+                assert_eq!(gcd(12, -18), 6);
+            },
+            fn gcd(mut x: i32, mut y: i32) -> i32 {
+                x = abs(x);
+                y = abs(y);
+                let mut cont = true;
+                while cont {
+                    //(x, y) = (min(x, y), max(x, y));
+                    let tmp_x = x;
+                    let tmp_y = y;
+                    x = min(tmp_x, tmp_y);
+                    y = max(tmp_x, tmp_y);
+                    if (x == y) || (x == 1) {
+                        cont = false; // return x
+                    };
+                    y = y - x;
                 }
-            }
-            fn max(x: i32, y: i32) -> i32 {
-                if x > y {
-                    x
-                } else {
-                    y
+                fn min(x: i32, y: i32) -> i32 {
+                    if x < y {
+                        x
+                    } else {
+                        y
+                    }
                 }
-            }
-            fn abs(x: i32) -> i32 {
-                if x < 0 {
-                    -x
-                } else {
-                    x
+                fn max(x: i32, y: i32) -> i32 {
+                    if x > y {
+                        x
+                    } else {
+                        y
+                    }
                 }
-            }
-            result
-        };
-        gcd(12, 18)
-    );
+                fn abs(x: i32) -> i32 {
+                    if x < 0 {
+                        0 - x   // no -x unary op
+                    } else {
+                        x
+                    }
+                }
+                x
+            };
+            gcd(12, 18)
+        );
+    }
+
+    /// Even more difficult version of the GCD function.
+    /// - Calls functions before they are defined.
+    /// - Defines nested functions.
+    /// - Shadows an outer function.
+    /// - Calls the shadowing function recursively.
+    /// - Uses unary operator `-x`.
+    /// - Shadows variables.
+    /// - Relies on expressions being parsed properly (with correct precedence).
+    #[test]
+    fn gcd_hard() {
+        test_block!({
+                assert_eq!(gcd(-5, 7), 1);
+                assert_eq!(gcd(36, 18), 18);
+                assert_eq!(gcd(12, -18), 6);
+            },
+            fn gcd(x: i32, y: i32) -> i32 {
+                let result = gcd(abs(x), abs(y));
+                fn gcd(x: i32, y: i32) -> i32 {
+                    if x == y || x == 1 {
+                        x
+                    } else {
+                        let tmp_x = x;
+                        let tmp_y = y;
+                        let x = min(tmp_x, tmp_y);
+                        let y = max(tmp_x, tmp_y);
+                        gcd(x, y - x)
+                    }
+                }
+                fn min(x: i32, y: i32) -> i32 {
+                    if x < y {
+                        x
+                    } else {
+                        y
+                    }
+                }
+                fn max(x: i32, y: i32) -> i32 {
+                    if x > y {
+                        x
+                    } else {
+                        y
+                    }
+                }
+                fn abs(x: i32) -> i32 {
+                    if x < 0 {
+                        -x
+                    } else {
+                        x
+                    }
+                }
+                result
+            };
+            gcd(12, 18)
+        );
+    }
 }
 
 //TODO: Implement references?
