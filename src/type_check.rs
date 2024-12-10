@@ -345,8 +345,8 @@ pub struct TVM {
     // State of the TVM -> Variables Environment
     var_env: Vec<HashMap<String, TypeVal>>,
     // Functions must be accessible in the correct scope only.
-    // On call, they will use another TVM to evaluate their block, initialized with the given arguments.
-    // So we will check that both types, number of arguments, and used variables are correct.
+    // On definition, they will use another TVM to evaluate their block and check its correctness.
+    // So we will check that types, number of arguments, and used variables are correct.
     // However, they should still have access to any function from the previous scopes.
     func_env: Vec<HashMap<String, FnDeclaration>>,
 

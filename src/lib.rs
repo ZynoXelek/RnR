@@ -20,5 +20,7 @@ pub mod type_check;
 
 pub mod vm;
 
+pub mod backend;
+
 // intrinsics
 pub mod intrinsics;

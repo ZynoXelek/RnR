@@ -42,10 +42,10 @@ pub enum BinOp {
     // Comparison operations (Integer and String if not specified)
     Eq, // Work for all types
     Ne, // Work for all types
-    Lt,
-    Le,
-    Gt,
-    Ge,
+    Lt, // strictly less than
+    Le, // less than or equal
+    Gt, // strictly greater than
+    Ge, // greater than or equal
     // Array operations
     Get, // Get element from array a[i]
 }
