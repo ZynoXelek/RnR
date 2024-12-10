@@ -1,4 +1,6 @@
-use crate::error::{TypeError, EvalError};
+use mips::vm::Mips;
+
+use crate::error::{TypeError, EvalError, Error};
 
 pub trait EvalType<T: Clone> {
     fn eval_type(&self) -> Result<T, TypeError>
@@ -10,6 +12,10 @@ pub trait Eval<T: Clone> {
     fn eval(&self) -> Result<T, EvalError>
     where
         T: Clone;
+}
+
+pub trait GetMips {
+    fn get_mips(&self) -> Result<Mips, Error>; //TODO: Use custom error
 }
 
 pub fn parse<T1>(s: &str) -> T1
@@ -44,4 +50,17 @@ where
     let v = bl.eval()?;
     println!("\nreturn {:?}", v);
     Ok(v)
+}
+
+pub fn parse_mips<T1>(s: &str) -> Result<Mips, Error>
+where
+    T1: syn::parse::Parse + std::fmt::Display + GetMips,
+{
+    let bl = parse::<T1>(s);
+    let mut mips = bl.get_mips()?;
+
+    // Evaluate it
+    mips.run();
+
+    Ok(mips)
 }
