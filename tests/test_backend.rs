@@ -52,10 +52,10 @@ mod test_bvm {
     #[test]
     fn test_simple_addition() {
         // Get the resulting mips
-        let mips = parse_mips::<Expr>("1 + 2").unwrap();
+        let mips = parse_mips::<Expr>("4 + 5").unwrap();
 
         // Check the result of the mips
-        assert_eq!(mips.rf.get(t0), 3);
+        assert_eq!(mips.rf.get(t0), 9);
     }
 
     #[test]
@@ -349,7 +349,7 @@ mod test_bvm {
     }
 
     #[test]
-    fn test_simple_let_with_block() {
+    fn test_simple_let_with_block_1() {
         // Get the resulting mips
         let mips = parse_mips::<Block>(
         "
@@ -364,6 +364,24 @@ mod test_bvm {
 
         // Check the result of the mips
         assert_eq!(mips.rf.get(t0), 3);
+    }
+
+    #[test]
+    fn test_simple_let_with_block_2() {
+        // Get the resulting mips
+        let mips = parse_mips::<Block>(
+        "
+        {
+            let a = {
+                let b = true;
+                b && false
+            };
+        }
+        "
+        ).unwrap();
+
+        // Check the result of the mips
+        assert_eq!(mips.rf.get(t0), 0);
     }
 
     #[test]
@@ -386,5 +404,185 @@ mod test_bvm {
 
         // Check the result of the mips
         assert_eq!(mips.rf.get(t0), 7);
+    }
+
+    #[test]
+    fn test_simple_if_then_else_1() {
+        // Get the resulting mips
+        let mips = parse_mips::<Block>(
+        "
+        {
+            if true {
+                4
+            } else {
+                5
+            }
+        }
+        "
+        ).unwrap();
+
+        // Check the result of the mips
+        assert_eq!(mips.rf.get(t0), 4);
+    }
+
+    #[test]
+    fn test_simple_if_then_else_2() {
+        // Get the resulting mips
+        let mips = parse_mips::<Block>(
+        "
+        {
+            if false {
+                4
+            } else {
+                5
+            }
+        }
+        "
+        ).unwrap();
+
+        // Check the result of the mips
+        assert_eq!(mips.rf.get(t0), 5);
+    }
+
+    #[test]
+    fn test_assign() {
+        // Get the resulting mips
+        let mips = parse_mips::<Block>(
+        "
+        {
+            let mut a = 2;
+            a = 3;
+            a
+        }
+        "
+        ).unwrap();
+
+        // Check the result of the mips
+        assert_eq!(mips.rf.get(t0), 3);
+    }
+
+    #[test]
+    #[ignore="to be fixed, there is something strange with 'assign' here. Must be something about the if inner scope"] //TODO: Fix this
+    fn test_simple_if_then_else_assign_1() {
+        // Get the resulting mips
+        let mips = parse_mips::<Block>(
+        "
+        {
+            let mut a = 1;
+            if true {
+                a = 4;
+            } else {
+                a = 6;
+            }
+            a
+        }
+        "
+        ).unwrap();
+
+        // Check the result of the mips
+        assert_eq!(mips.rf.get(t0), 4);
+    }
+
+    #[test]
+    #[ignore="to be fixed, there is something strange with 'assign' here. Must be something about the if inner scope"] //TODO: Fix this
+    fn test_simple_if_then_else_assign_2() {
+        // Get the resulting mips
+        let mips = parse_mips::<Block>(
+        "
+        {
+            let mut a = 1;
+            if false {
+                a = 4;
+            } else {
+                a = 6;
+            }
+            a
+        }
+        "
+        ).unwrap();
+
+        // Check the result of the mips
+        assert_eq!(mips.rf.get(t0), 6);
+    }
+
+    #[test]
+    #[ignore="to be fixed, there is something strange with 'let' here"] //TODO: Fix this
+    fn test_simple_if_then_else_3() {
+        // Get the resulting mips
+        let mips = parse_mips::<Block>(
+        "
+        {
+            let a = if true {
+                4
+            } else {
+                5
+            };
+            let b = 2;
+            a + b
+        }
+        "
+        ).unwrap();
+
+        // Check the result of the mips
+        assert_eq!(mips.rf.get(t0), 6);
+    }
+
+    #[test]
+    fn test_while_false() {
+        // Get the resulting mips
+        let mips = parse_mips::<Block>(
+        "
+        {
+            let mut a = 0;
+            while false {
+                a = a + 1;
+            }
+            a
+        }
+        "
+        ).unwrap();
+
+        // Check the result of the mips
+        assert_eq!(mips.rf.get(t0), 0);
+    }
+
+    #[test]
+    #[ignore="to be fixed, there is something strange with 'assign' here. Must be something about the while inner scope"] //TODO: Fix this
+    //TODO: Don't run this yet, it is infinite loop
+    fn test_while_with_var_1() {
+        // Get the resulting mips
+        let mips = parse_mips::<Block>(
+        "
+        {
+            let mut a = 0;
+            while a < 4 {
+                a = a + 1;
+            }
+            a
+        }
+        "
+        ).unwrap();
+
+        // Check the result of the mips
+        assert_eq!(mips.rf.get(t0), 4);
+    }
+
+    #[test]
+    fn test_while_with_var_2() {
+        // Get the resulting mips
+        let mips = parse_mips::<Block>(
+        "
+        {
+            let mut a = 0;
+            while a > 0 {
+                a = a - 1;
+            }
+            a
+        }
+        "
+        ).unwrap();
+
+        // Check the result of the mips
+        assert_eq!(mips.rf.get(t0), 0);
     }
 }

@@ -55,14 +55,20 @@ YOUR CHANGES/ADDED FEATURES HERE
 - Made it so that we can declare an uninitialized variable, without even explicitly declaring its type.
 - Fixed if statements so that if a variable is initialized in a peculiar branch, it should be in the other one as well, with the same type.
 
-## 2024-12-9
+## 2024-12-09
 
 - Begin work on backend part. Now literals, binop, unop and variables definition are implemented. WIP.
 - There is an issue with the way we define variables thanks to a block. Need to look into it.
 - Fixed the issue.
 
+## 2024-12-11
+
+- Continue work on backend with assignment, if and while loops. Still WIP as there is an issue with inner loops and var modifications for if and while loops. Need to look into it.
+
 ## TODO
 
+- Fix if and while issues
+- Add support for uninitialized variables in the backend part
 - Finish the basic backend for the compiler
 - Implement references
 - Write type rules
