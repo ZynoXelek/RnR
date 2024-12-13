@@ -101,7 +101,7 @@ impl GetMips for Block {
         bvm.add_instrs(block_instrs);
 
         //? Debug, but may be commented out
-        // bvm.pretty_print_instructions();
+        bvm.pretty_print_instructions();
 
         Ok(bvm.get_mips())
     }
@@ -500,7 +500,8 @@ impl BVM {
                         );
                         expr_instrs.append(&mut self.push(t0)); // Then push the value to the stack
                     }
-                    None => panic!("Variable {} not defined", ident), //TODO: Change this to a custom error
+                    // This is unreachable because the type checker should have checked this before
+                    None => unreachable!("Variable '{}' not defined", ident), //TODO: Change this to a custom error
                 }
             }
             Expr::BinOp(op, left, right) => {
@@ -513,7 +514,8 @@ impl BVM {
             }
             Expr::IfThenElse(cond, then_block, else_block) => {
                 // Process the condition
-                expr_instrs.append(&mut self.process_expr(*cond)); // It is located in t0
+                expr_instrs.append(&mut self.process_expr(*cond)); // It is located in t0, AND at the top of the stack
+                expr_instrs.append(&mut self.pop(t0)); // Pop the condition to t0 (seems useless, but if forgotten, the frame layout will be wrong)
 
                 // Get the block instructions ready
                 let mut then_instrs = self.process_block(then_block);
@@ -557,20 +559,29 @@ impl BVM {
             Statement::Let(_, name, _, expr_opt) => {
                 if let Some(expr) = expr_opt {
                     stmt_instrs.append(&mut self.process_expr(expr)); // The value is now located on top of the stack
-
-                    // We just have to define it in our variable environment now
-                    self.define_var(&name);
+                } else {
+                    // If there is no expression, we just define the variable. It will be initialized to 0
+                    stmt_instrs.push(addi(t0, zero, 0).comment("Initialize variable to 0"));
+                    stmt_instrs.append(&mut self.push(t0)); // Push the value to the stack
                 }
+
+                // Now we define the variable in our environment
+                self.define_var(&name);
             }
             Statement::Assign(left, right) => {
                 // We first process the expression to get the new value
                 stmt_instrs.append(&mut self.process_expr(right)); // The value is now located on top of the stack
                 stmt_instrs.append(&mut self.pop(t0)); // Pop the value to t0
 
+                // Debug
+                self.pretty_print_scopes();
+
                 match left {
                     Expr::Ident(name) => {
                         // To assign a value to a variable, we need to find it in the stack
                         let fp_offset = self.get_var_offset(&name);
+
+                        println!("Var offset: {:?}", fp_offset);
 
                         // Then, we store the value in the variable
                         match fp_offset {
@@ -587,6 +598,7 @@ impl BVM {
                                     ),
                                 );
                             }
+                            // This is unreachable because the type checker should have checked this before
                             None => unreachable!("Variable '{}' not defined", name),
                         }
                     }
@@ -598,7 +610,9 @@ impl BVM {
                 let mut while_instrs = Instrs::new();
 
                 // First look at the condition
-                while_instrs.append(&mut self.process_expr(cond)); // It is located in t0
+                while_instrs.append(&mut self.process_expr(cond)); // It is located in t0, but also at the top of the stack
+                while_instrs.append(&mut self.pop(t0)); // Pop the condition to t0 (seems useless, but if forgotten, the frame layout will be wrong)
+
                 // Get the block instructions ready
                 let mut block_instrs = self.process_block(block);
                 let nb_block_instrs = block_instrs.len() as i16 + 1; // Needs +1 because will have a final jump back to the condition instruction

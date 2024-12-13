@@ -68,12 +68,12 @@ YOUR CHANGES/ADDED FEATURES HERE
 ## 2024-12-13
 
 - Implement multiplication and division BinOp.
+- Implement definition of uninitialized variables.
+- Fix if and while issues.
 
 ## TODO
 
-- Fix if and while issues
-- Add support for uninitialized variables in the backend part
-- Finish the basic backend for the compiler
+- Implement functions for the backend
 - Implement references
 - Write type rules
 - Add support for CONSTANT expression in array size, and any non unit type expression in the init value during array definition.
