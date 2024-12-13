@@ -65,6 +65,10 @@ YOUR CHANGES/ADDED FEATURES HERE
 
 - Continue work on backend with assignment, if and while loops. Still WIP as there is an issue with inner loops and var modifications for if and while loops. Need to look into it.
 
+## 2024-12-13
+
+- Implement multiplication and division BinOp.
+
 ## TODO
 
 - Fix if and while issues

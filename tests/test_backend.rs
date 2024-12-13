@@ -68,23 +68,120 @@ mod test_bvm {
     }
 
     #[test]
-    #[ignore="Not implemented"]
-    fn test_simple_multiplication() {
+    fn test_simple_subtraction_negative_result() {
         // Get the resulting mips
-        let mips = parse_mips::<Expr>("3 * 2").unwrap();
+        let mips = parse_mips::<Expr>("3 - 7").unwrap();
 
         // Check the result of the mips
-        assert_eq!(mips.rf.get(t0), 6);
+        assert_eq!(mips.rf.get(t0), (-4 as i32) as u32);
     }
 
     #[test]
-    #[ignore="Not implemented"]
-    fn test_simple_division() {
+    fn test_simple_multiplication_1() {
         // Get the resulting mips
-        let mips = parse_mips::<Expr>("3 / 2").unwrap();
+        let mips = parse_mips::<Expr>("3 * 5").unwrap();
+
+        // Check the result of the mips
+        assert_eq!(mips.rf.get(t0), 15);
+    }
+
+    #[test]
+    fn test_simple_multiplication_2() {
+        // Get the resulting mips
+        let mips = parse_mips::<Expr>("3 * -5").unwrap();
+
+        // Check the result of the mips
+        assert_eq!(mips.rf.get(t0), (-15 as i32) as u32);
+    }
+
+    #[test]
+    fn test_simple_multiplication_3() {
+        // Get the resulting mips
+        let mips = parse_mips::<Expr>("-3 * 5").unwrap();
+
+        // Check the result of the mips
+        assert_eq!(mips.rf.get(t0), (-15 as i32) as u32);
+    }
+
+    #[test]
+    fn test_simple_multiplication_4() {
+        // Get the resulting mips
+        let mips = parse_mips::<Expr>("-3 * -5").unwrap();
+
+        // Check the result of the mips
+        assert_eq!(mips.rf.get(t0), 15);
+    }
+
+    #[test]
+    fn test_simple_multiplication_5() {
+        // Get the resulting mips
+        let mips = parse_mips::<Expr>("0 * 5").unwrap();
+
+        // Check the result of the mips
+        assert_eq!(mips.rf.get(t0), 0);
+    }
+
+    #[test]
+    fn test_simple_multiplication_6() {
+        // Get the resulting mips
+        let mips = parse_mips::<Expr>("3 * 0").unwrap();
+
+        // Check the result of the mips
+        assert_eq!(mips.rf.get(t0), 0);
+    }
+
+    #[test]
+    fn test_simple_division_1() {
+        // Get the resulting mips
+        let mips = parse_mips::<Expr>("16 / 5").unwrap();
+
+        // Check the result of the mips
+        assert_eq!(mips.rf.get(t0), 3);
+    }
+
+    #[test]
+    fn test_simple_division_2() {
+        // Get the resulting mips
+        let mips = parse_mips::<Expr>("-16 / 5").unwrap();
+
+        // Check the result of the mips
+        assert_eq!(mips.rf.get(t0), (-3 as i32) as u32);
+    }
+
+    #[test]
+    fn test_simple_division_3() {
+        // Get the resulting mips
+        let mips = parse_mips::<Expr>("16 / -5").unwrap();
+
+        // Check the result of the mips
+        assert_eq!(mips.rf.get(t0), (-3 as i32) as u32);
+    }
+
+    #[test]
+    fn test_simple_division_4() {
+        // Get the resulting mips
+        let mips = parse_mips::<Expr>("-16 / -5").unwrap();
+
+        // Check the result of the mips
+        assert_eq!(mips.rf.get(t0), 3);
+    }
+
+    #[test]
+    fn test_simple_division_5() {
+        // Get the resulting mips
+        let mips = parse_mips::<Expr>("14 / 14").unwrap();
 
         // Check the result of the mips
         assert_eq!(mips.rf.get(t0), 1);
+    }
+
+    #[test]
+    fn test_simple_division_6() {
+        // Get the resulting mips
+        let mips = parse_mips::<Expr>("14 / -14").unwrap();
+
+        // Check the result of the mips
+        assert_eq!(mips.rf.get(t0), (-1 as i32) as u32);
     }
 
     //* ||
@@ -225,6 +322,33 @@ mod test_bvm {
 
         // Check the result of the mips
         assert_eq!(mips.rf.get(t0), 0);
+    }
+
+    #[test]
+    fn test_lt_negative_value_1() {
+        // Get the resulting mips
+        let mips = parse_mips::<Expr>("-3 < -2").unwrap();
+
+        // Check the result of the mips
+        assert_eq!(mips.rf.get(t0), 1);
+    }
+
+    #[test]
+    fn test_lt_negative_value_2() {
+        // Get the resulting mips
+        let mips = parse_mips::<Expr>("-1 < -2").unwrap();
+
+        // Check the result of the mips
+        assert_eq!(mips.rf.get(t0), 0);
+    }
+
+    #[test]
+    fn test_lt_negative_value_3() {
+        // Get the resulting mips
+        let mips = parse_mips::<Expr>("-1 < 1").unwrap();
+
+        // Check the result of the mips
+        assert_eq!(mips.rf.get(t0), 1);
     }
 
     //* <=

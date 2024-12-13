@@ -88,7 +88,7 @@ impl GetMips for Expr {
         bvm.add_instrs(expr_instrs);
 
         //? Debug, but may be commented out
-        bvm.pretty_print_instructions();
+        // bvm.pretty_print_instructions();
 
         Ok(bvm.get_mips())
     }
@@ -101,7 +101,7 @@ impl GetMips for Block {
         bvm.add_instrs(block_instrs);
 
         //? Debug, but may be commented out
-        bvm.pretty_print_instructions();
+        // bvm.pretty_print_instructions();
 
         Ok(bvm.get_mips())
     }
@@ -224,38 +224,6 @@ impl BVM {
         self.var_env.last_mut().unwrap().add_var(name.clone());
     }
 
-    //TODO: Remove if not necessary
-    // // Computes the signed offset of a variable from the given scope in the stack relative to the current fp value (innermost scope)
-    // fn get_var_offset_in_scope(&mut self, name: &String, scope_id: usize) -> Option<i32> {
-    //     let mut scope_offset: i32 = 0;
-    //     let nb_scopes = self.var_env.len();
-    //     let final_scope_id = nb_scopes - scope_id - 1;
-
-    //     if final_scope_id < 0 {
-    //         return None; // The scope does not exist
-    //     }
-
-    //     for i in 0..final_scope_id {
-    //         let scope = self.var_env.get(nb_scopes - i - 1).unwrap();
-    //         // If we are not in the first scope, we should add the size of the scope itself to be able to go back to the local fp[0] position
-    //         if i != 0 {
-    //             scope_offset += scope.nb_vars as i32 * 4; // Each variable is 4 bytes
-    //         }
-
-    //         if i == final_scope_id {
-    //             if let Some(offset) = scope.get_var(name) {
-    //                 return Some(scope_offset - (*offset as i32));
-    //             } else {
-    //                 return None;
-    //             }
-    //         } else {
-    //             // We add the base offset due to the frame layout
-    //             scope_offset += 20;
-    //         }
-    //     }
-    //     None
-    // }
-
     //* stack frame layout:
     // ... things before ...
     // 16[fp]    arg 1
@@ -325,11 +293,11 @@ impl BVM {
 
         match op {
             UnOp::Bang => {
-                unop_instrs.push(xori(t0, t0, 1).comment("Proceeds UnOp::Bang"));
+                unop_instrs.push(xori(t0, t0, 1).comment("Proceed UnOp::Bang"));
                 // Logical negation
             }
             UnOp::Neg => {
-                unop_instrs.push(subu(t0, zero, t0).comment("Proceeds UnOp::Neg"));
+                unop_instrs.push(subu(t0, zero, t0).comment("Proceed UnOp::Neg"));
                 // Numeric negation
             }
         }
@@ -353,62 +321,131 @@ impl BVM {
         match op {
             // Integer operations
             BinOp::Add => {
-                binop_instrs.push(add(t0, t0, t1).comment("Proceeds BinOp::Add"));
+                binop_instrs.push(addu(t0, t0, t1).comment("Proceed BinOp::Add"));
             }
             BinOp::Sub => {
-                binop_instrs.push(sub(t0, t0, t1).comment("Proceeds BinOp::Sub"));
+                // Handles the subtraction overflow when going to negative values by using subu
+                binop_instrs.push(subu(t0, t0, t1).comment("Proceed BinOp::Sub"));
             }
-            BinOp::Mul | BinOp::Div => todo!(), //TODO: Add support for multiplication and division
+            BinOp::Mul => {
+                // For a multiplication, we need to initialize a counter to do the correct number of multiplications
+                // For now, not optimized, the counter is always the right operand
+                // For an optimized version, we should take the lowest value (in absolute value) as the counter
+
+                // Let's compute the result in t0. Let's store the left operand in t2.
+                // Let's use t3 to store the (negative) counter, and t4 to store the boolean to show whether it was positive or not.
+                binop_instrs.push(addu(t2, zero, t0).comment("Store the addition value (Begin multiplication)"));
+                binop_instrs.push(addu(t0, zero, zero).comment("Initialize the result to 0"));
+                binop_instrs.push(addi(t4, zero, 1).comment("Initialize the negative counter boolean to True"));
+                
+                // If the right operand is negative, we need to negate it
+                binop_instrs.push(addu(t3, zero, t1).comment("Initialize the counter to the right operand"));
+                binop_instrs.push(blez(t3, 2).comment("Check if the counter is negative. If so, skip the negation"));
+                binop_instrs.push(subu(t3, zero, t3).comment("Negate the counter"));
+                binop_instrs.push(addi(t4, zero, 0).comment("Set the negative counter boolean to False"));
+
+                // Actual loop for the multiplication
+                binop_instrs.push(beq(t3, zero, 3).comment("Multiplication loop: check if the counter is 0"));
+                binop_instrs.push(addu(t0, t0, t2).comment("Proceed a single addition for the multiplication"));
+                binop_instrs.push(addiu(t3, t3, 1).comment("Update the counter"));
+                binop_instrs.push(b(-4).comment("Branch back to multiplication loop"));
+
+                // At the end, if the counter was negative, we need to negate the result
+                binop_instrs.push(beq(t4, zero, 1).comment("Skip next instruction if the counter was positive"));
+                binop_instrs.push(subu(t0, zero, t0).comment("Negate the result (the counter was negative) (End multiplication)"));
+            },
+            BinOp::Div => {
+                // For a division, we need to count the number of times we can subtract the right operand from the left operand
+
+                // Let's compute the result in t0.
+                // Let's store the positive left operand in t2 (and the remainder).
+                // Let's store the positive right operand in t1.
+                // Let's store the "is left operand negative?" in t4.
+                // Let's store the "is right operand negative?" in t3.
+                // Let's store the negated left operand in t6. (For boolean checks, since we only have branch on <= 0)
+                // Let's store the negated right operand in t5. (For boolean checks, since we only have branch on <= 0)
+                // Let's store the condition to check in t7.
+
+                //* Initialization
+                binop_instrs.push(addu(t2, zero, t0).comment("Store the left operand (Begin division)"));
+                binop_instrs.push(subu(t6, zero, t2).comment("Store the negated left operand"));
+                binop_instrs.push(subu(t5, zero, t1).comment("Store the negated right operand"));
+                binop_instrs.push(addi(t4, zero, 0).comment("Initialize the 'is left operand negative?' boolean to False"));
+                binop_instrs.push(addi(t3, zero, 0).comment("Initialize the 'is right operand negative?' boolean to False"));
+
+                binop_instrs.push(blez(t6, 2).comment("Check if the left operand is positive. If so, skip the negation"));
+                binop_instrs.push(subu(t2, zero, t2).comment("Negate the left operand to make it positive"));
+                binop_instrs.push(addi(t4, zero, 1).comment("Set the 'is left operand negative?' boolean to True"));
+
+                binop_instrs.push(blez(t5, 2).comment("Check if the right operand is positive. If so, skip the negation"));
+                binop_instrs.push(subu(t1, zero, t1).comment("Negate the right operand to make it positive"));
+                binop_instrs.push(addi(t3, zero, 1).comment("Set the 'is right operand negative?' boolean to True"));
+                
+                binop_instrs.push(addu(t0, zero, zero).comment("Initialize the result to 0"));
+
+                //* Actual division loop
+                binop_instrs.push(subu(t2, t2, t1).comment("Compute new remainder (Begin division loop)"));
+                binop_instrs.push(beq(t2, zero, 1).comment("Division loop: check if the remainder is null (division must continue)"));
+                binop_instrs.push(blez(t2, 2).comment("Division loop: check if the remainder is strictly negative (Division finished)"));
+                binop_instrs.push(addi(t0, t0, 1).comment("Update the result"));
+                binop_instrs.push(b(-5).comment("Branch back to division loop (End division loop)"));
+
+                //* At the end, we need to check if the result should be negated
+                binop_instrs.push(beq(t4, zero, 1).comment("Skip next result negation if the left operand was positive"));
+                binop_instrs.push(subu(t0, zero, t0).comment("Negate the result (the left operand was negative)"));
+                binop_instrs.push(beq(t3, zero, 1).comment("Skip next result negation if the right operand was positive"));
+                binop_instrs.push(subu(t0, zero, t0).comment("Negate the result (the right operand was negative) (End division)"));
+            },
             // Boolean only operations
             BinOp::And => {
-                binop_instrs.push(and(t0, t0, t1).comment("Proceeds BinOp::And"));
+                binop_instrs.push(and(t0, t0, t1).comment("Proceed BinOp::And"));
             }
             BinOp::Or => {
-                binop_instrs.push(or(t0, t0, t1).comment("Proceeds BinOp::Or"));
+                binop_instrs.push(or(t0, t0, t1).comment("Proceed BinOp::Or"));
             }
             // Comparison operations
             BinOp::Eq => {
-                binop_instrs.push(beq(t0, t1, 2).comment("Begins BinOp::Eq")); // If equal, jump two instructions
+                binop_instrs.push(beq(t0, t1, 2).comment("Begin BinOp::Eq")); // If equal, jump two instructions
                 binop_instrs.push(addi(t0, zero, 0)); // Here, the result if false
                 binop_instrs.push(b(1)); // Then we jump the next instruction
-                binop_instrs.push(addi(t0, zero, 1).comment("Finishes BinOp::Eq"));
+                binop_instrs.push(addi(t0, zero, 1).comment("Finish BinOp::Eq"));
                 // Here, the result if true
             }
             BinOp::Ne => {
-                binop_instrs.push(bne(t0, t1, 2).comment("Begins BinOp::Ne")); // If equal, jump two instructions
+                binop_instrs.push(bne(t0, t1, 2).comment("Begin BinOp::Ne")); // If equal, jump two instructions
                 binop_instrs.push(addi(t0, zero, 0)); // Here, the result if false
                 binop_instrs.push(b(1)); // Then we jump the next instruction
-                binop_instrs.push(addi(t0, zero, 1).comment("Finishes BinOp::Ne"));
+                binop_instrs.push(addi(t0, zero, 1).comment("Finish BinOp::Ne"));
                 // Here, the result if true
             }
             BinOp::Lt => {
-                binop_instrs.push(slt(t0, t0, t1).comment("Proceeds BinOp::Lt"));
+                binop_instrs.push(slt(t0, t0, t1).comment("Proceed BinOp::Lt"));
                 // Less than (strictly)
             }
             BinOp::Le => {
-                binop_instrs.push(beq(t0, t1, 2).comment("Begins BinOp::Le")); // If equal, jump two instructions
+                binop_instrs.push(beq(t0, t1, 2).comment("Begin BinOp::Le")); // If equal, jump two instructions
                 binop_instrs.push(slt(t0, t0, t1));
                 binop_instrs.push(b(1)); // Then we jump the next instruction
-                binop_instrs.push(addi(t0, zero, 1).comment("Finishes BinOp::Le"));
+                binop_instrs.push(addi(t0, zero, 1).comment("Finish BinOp::Le"));
                 // Here, the result if true
             }
             BinOp::Gt => {
                 // Greater than (strictly) is Not(less than or equal)
                 // ---> This is lower or equal
-                binop_instrs.push(beq(t0, t1, 2).comment("Begins BinOp::Gt")); // If equal, jump two instructions
+                binop_instrs.push(beq(t0, t1, 2).comment("Begin BinOp::Gt")); // If equal, jump two instructions
                 binop_instrs.push(slt(t0, t0, t1));
                 binop_instrs.push(b(1)); // Then we jump the next instruction
                 binop_instrs.push(addi(t0, zero, 1)); // Here, the result if true
                                                       // ---> This is the opposite
-                binop_instrs.push(xori(t0, t0, 1).comment("Finishes BinOp::Gt"));
+                binop_instrs.push(xori(t0, t0, 1).comment("Finish BinOp::Gt"));
                 // Do it in place
             }
             BinOp::Ge => {
                 // Greater or equal than is Not(strictly less)
                 // ---> This is strictly lower than
-                binop_instrs.push(slt(t0, t0, t1).comment("Begins BinOp::Ge")); // Less than (strictly)
+                binop_instrs.push(slt(t0, t0, t1).comment("Begin BinOp::Ge")); // Less than (strictly)
                                                                                 // ---> This is the opposite
-                binop_instrs.push(xori(t0, t0, 1).comment("Finishes BinOp::Ge"));
+                binop_instrs.push(xori(t0, t0, 1).comment("Finish BinOp::Ge"));
                 // Do it in place
             }
             BinOp::Get => todo!(), //TODO: Add support for array operations
