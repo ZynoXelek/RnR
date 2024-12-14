@@ -1,4 +1,5 @@
 use core::fmt;
+use std::cmp::min;
 use std::collections::HashMap;
 
 use crate::ast::{
@@ -34,19 +35,23 @@ use mips::{
 // -8[fp]    local 2, etc.
 
 pub struct Scope {
-    size: u32,                  // Tracks the size of the scope on fp values
-    nb_vars: u32,               // Tracks the number of variables in the scope
+    size: u32,                       // Tracks the size of the scope on fp values
+    nb_vars: u32,                    // Tracks the number of variables in the scope
     vars: HashMap<String, u32>, // Tracks the position of the variables on the stack (relative to fp): name -> position (-4, -8, ... but without the sign)
+    functions: HashMap<String, u32>, // Tracks the position of the functions in the instructions memory
 }
 
 //? Helpers
 
 impl Scope {
+    // Vars will be stored on the stack.
+    // Functions will be stocked in the instructions memory.
     pub fn new() -> Self {
         Self {
             size: 20, // Default size of the scope due to the frame layout
             nb_vars: 0,
             vars: HashMap::new(),
+            functions: HashMap::new(),
         }
     }
 
@@ -59,17 +64,29 @@ impl Scope {
     pub fn get_var(&self, name: &String) -> Option<&u32> {
         self.vars.get(name)
     }
+
+    pub fn add_function(&mut self, name: String, offset: u32) {
+        self.functions.insert(name, offset);
+    }
+
+    pub fn get_function(&self, name: &String) -> Option<&u32> {
+        self.functions.get(name)
+    }
 }
 
 impl fmt::Display for Scope {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(
             f,
-            "Scope: size={}, nb_vars={}, vars:\n",
+            "Scope: size={}, nb_vars={}\nVars:\n",
             self.size, self.nb_vars
         )?;
         for (name, offset) in self.vars.iter() {
-            write!(f, "\t{}: {}\n", name, offset)?;
+            write!(f, "\t- {}: {}\n", name, offset)?;
+        }
+        write!(f, "Functions:\n")?;
+        for (name, offset) in self.functions.iter() {
+            write!(f, "\t- {}: {}\n", name, offset)?;
         }
         write!(f, "")
     }
@@ -109,7 +126,14 @@ impl GetMips for Block {
 
 impl GetMips for Prog {
     fn get_mips(&self) -> Result<Mips, Error> {
-        todo!() //TODO: Implement mips for programs
+        let mut bvm = BVM::new();
+        let prog_intrs = bvm.process_prog(self.clone());
+        bvm.add_instrs(prog_intrs);
+
+        //? Debug, but may be commented out
+        bvm.pretty_print_instructions();
+
+        Ok(bvm.get_mips())
     }
 }
 
@@ -175,7 +199,7 @@ impl BVM {
     // -8[fp]    local 2, etc.
 
     fn add_scope(&mut self) -> Instrs {
-        let mut new_scope = Scope::new();
+        let new_scope = Scope::new();
 
         let mut instrs = Instrs::new();
 
@@ -188,13 +212,15 @@ impl BVM {
                 .as_str(),
             ),
         );
-        self.var_env.push(new_scope);
 
         // Then, push the current frame pointer, and set the new frame pointer to the current stack pointer
+        instrs.push(sw(ra, 4, sp).comment("Save the return address"));
         instrs.push(sw(fp, 0, sp).comment("Save the old frame pointer"));
         instrs.push(
             addi(fp, sp, 0).comment("Set the new frame pointer to the current stack pointer"),
         );
+
+        self.var_env.push(new_scope);
 
         instrs
     }
@@ -202,9 +228,13 @@ impl BVM {
     fn remove_scope(&mut self) -> Instrs {
         let scope = self.var_env.pop().unwrap(); // Get last scope
 
+        //? Debug
+        eprintln!("Removing following scope:\n{}", scope);
+
         let mut instrs = Instrs::new();
 
-        // Restore the old frame pointer
+        // Restore the old frame pointer and the return address
+        instrs.push(lw(ra, 4, fp).comment("Restore the return address"));
         instrs.push(lw(fp, 0, fp).comment("Restore the old frame pointer"));
 
         instrs.push(
@@ -248,6 +278,22 @@ impl BVM {
             }
             // It was not defined in this scope, so we add the +20 bytes of the scope which are located above fp[0]
             scope_offset += 20;
+        }
+        None
+    }
+
+    fn define_function(&mut self, name: &String, offset: u32) {
+        self.var_env
+            .last_mut()
+            .unwrap()
+            .add_function(name.clone(), offset);
+    }
+
+    fn get_function_offset(&mut self, name: &String) -> Option<u32> {
+        for scope in self.var_env.iter().rev() {
+            if let Some(offset) = scope.get_function(name) {
+                return Some(*offset);
+            }
         }
         None
     }
@@ -334,26 +380,46 @@ impl BVM {
 
                 // Let's compute the result in t0. Let's store the left operand in t2.
                 // Let's use t3 to store the (negative) counter, and t4 to store the boolean to show whether it was positive or not.
-                binop_instrs.push(addu(t2, zero, t0).comment("Store the addition value (Begin multiplication)"));
+                binop_instrs.push(
+                    addu(t2, zero, t0).comment("Store the addition value (Begin multiplication)"),
+                );
                 binop_instrs.push(addu(t0, zero, zero).comment("Initialize the result to 0"));
-                binop_instrs.push(addi(t4, zero, 1).comment("Initialize the negative counter boolean to True"));
-                
+                binop_instrs.push(
+                    addi(t4, zero, 1).comment("Initialize the negative counter boolean to True"),
+                );
+
                 // If the right operand is negative, we need to negate it
-                binop_instrs.push(addu(t3, zero, t1).comment("Initialize the counter to the right operand"));
-                binop_instrs.push(blez(t3, 2).comment("Check if the counter is negative. If so, skip the negation"));
+                binop_instrs.push(
+                    addu(t3, zero, t1).comment("Initialize the counter to the right operand"),
+                );
+                binop_instrs.push(
+                    blez(t3, 2)
+                        .comment("Check if the counter is negative. If so, skip the negation"),
+                );
                 binop_instrs.push(subu(t3, zero, t3).comment("Negate the counter"));
-                binop_instrs.push(addi(t4, zero, 0).comment("Set the negative counter boolean to False"));
+                binop_instrs
+                    .push(addi(t4, zero, 0).comment("Set the negative counter boolean to False"));
 
                 // Actual loop for the multiplication
-                binop_instrs.push(beq(t3, zero, 3).comment("Multiplication loop: check if the counter is 0"));
-                binop_instrs.push(addu(t0, t0, t2).comment("Proceed a single addition for the multiplication"));
+                binop_instrs.push(
+                    beq(t3, zero, 3).comment("Multiplication loop: check if the counter is 0"),
+                );
+                binop_instrs.push(
+                    addu(t0, t0, t2).comment("Proceed a single addition for the multiplication"),
+                );
                 binop_instrs.push(addiu(t3, t3, 1).comment("Update the counter"));
                 binop_instrs.push(b(-4).comment("Branch back to multiplication loop"));
 
                 // At the end, if the counter was negative, we need to negate the result
-                binop_instrs.push(beq(t4, zero, 1).comment("Skip next instruction if the counter was positive"));
-                binop_instrs.push(subu(t0, zero, t0).comment("Negate the result (the counter was negative) (End multiplication)"));
-            },
+                binop_instrs.push(
+                    beq(t4, zero, 1).comment("Skip next instruction if the counter was positive"),
+                );
+                binop_instrs.push(
+                    subu(t0, zero, t0).comment(
+                        "Negate the result (the counter was negative) (End multiplication)",
+                    ),
+                );
+            }
             BinOp::Div => {
                 // For a division, we need to count the number of times we can subtract the right operand from the left operand
 
@@ -367,35 +433,75 @@ impl BVM {
                 // Let's store the condition to check in t7.
 
                 //* Initialization
-                binop_instrs.push(addu(t2, zero, t0).comment("Store the left operand (Begin division)"));
+                binop_instrs
+                    .push(addu(t2, zero, t0).comment("Store the left operand (Begin division)"));
                 binop_instrs.push(subu(t6, zero, t2).comment("Store the negated left operand"));
                 binop_instrs.push(subu(t5, zero, t1).comment("Store the negated right operand"));
-                binop_instrs.push(addi(t4, zero, 0).comment("Initialize the 'is left operand negative?' boolean to False"));
-                binop_instrs.push(addi(t3, zero, 0).comment("Initialize the 'is right operand negative?' boolean to False"));
+                binop_instrs.push(
+                    addi(t4, zero, 0)
+                        .comment("Initialize the 'is left operand negative?' boolean to False"),
+                );
+                binop_instrs.push(
+                    addi(t3, zero, 0)
+                        .comment("Initialize the 'is right operand negative?' boolean to False"),
+                );
 
-                binop_instrs.push(blez(t6, 2).comment("Check if the left operand is positive. If so, skip the negation"));
-                binop_instrs.push(subu(t2, zero, t2).comment("Negate the left operand to make it positive"));
-                binop_instrs.push(addi(t4, zero, 1).comment("Set the 'is left operand negative?' boolean to True"));
+                binop_instrs
+                    .push(blez(t6, 2).comment(
+                        "Check if the left operand is positive. If so, skip the negation",
+                    ));
+                binop_instrs.push(
+                    subu(t2, zero, t2).comment("Negate the left operand to make it positive"),
+                );
+                binop_instrs.push(
+                    addi(t4, zero, 1)
+                        .comment("Set the 'is left operand negative?' boolean to True"),
+                );
 
-                binop_instrs.push(blez(t5, 2).comment("Check if the right operand is positive. If so, skip the negation"));
-                binop_instrs.push(subu(t1, zero, t1).comment("Negate the right operand to make it positive"));
-                binop_instrs.push(addi(t3, zero, 1).comment("Set the 'is right operand negative?' boolean to True"));
-                
+                binop_instrs.push(
+                    blez(t5, 2).comment(
+                        "Check if the right operand is positive. If so, skip the negation",
+                    ),
+                );
+                binop_instrs.push(
+                    subu(t1, zero, t1).comment("Negate the right operand to make it positive"),
+                );
+                binop_instrs.push(
+                    addi(t3, zero, 1)
+                        .comment("Set the 'is right operand negative?' boolean to True"),
+                );
+
                 binop_instrs.push(addu(t0, zero, zero).comment("Initialize the result to 0"));
 
                 //* Actual division loop
-                binop_instrs.push(subu(t2, t2, t1).comment("Compute new remainder (Begin division loop)"));
-                binop_instrs.push(beq(t2, zero, 1).comment("Division loop: check if the remainder is null (division must continue)"));
+                binop_instrs
+                    .push(subu(t2, t2, t1).comment("Compute new remainder (Begin division loop)"));
+                binop_instrs.push(beq(t2, zero, 1).comment(
+                    "Division loop: check if the remainder is null (division must continue)",
+                ));
                 binop_instrs.push(blez(t2, 2).comment("Division loop: check if the remainder is strictly negative (Division finished)"));
                 binop_instrs.push(addi(t0, t0, 1).comment("Update the result"));
-                binop_instrs.push(b(-5).comment("Branch back to division loop (End division loop)"));
+                binop_instrs
+                    .push(b(-5).comment("Branch back to division loop (End division loop)"));
 
                 //* At the end, we need to check if the result should be negated
-                binop_instrs.push(beq(t4, zero, 1).comment("Skip next result negation if the left operand was positive"));
-                binop_instrs.push(subu(t0, zero, t0).comment("Negate the result (the left operand was negative)"));
-                binop_instrs.push(beq(t3, zero, 1).comment("Skip next result negation if the right operand was positive"));
-                binop_instrs.push(subu(t0, zero, t0).comment("Negate the result (the right operand was negative) (End division)"));
-            },
+                binop_instrs.push(
+                    beq(t4, zero, 1)
+                        .comment("Skip next result negation if the left operand was positive"),
+                );
+                binop_instrs.push(
+                    subu(t0, zero, t0).comment("Negate the result (the left operand was negative)"),
+                );
+                binop_instrs.push(
+                    beq(t3, zero, 1)
+                        .comment("Skip next result negation if the right operand was positive"),
+                );
+                binop_instrs.push(
+                    subu(t0, zero, t0).comment(
+                        "Negate the result (the right operand was negative) (End division)",
+                    ),
+                );
+            }
             // Boolean only operations
             BinOp::And => {
                 binop_instrs.push(and(t0, t0, t1).comment("Proceed BinOp::And"));
@@ -444,7 +550,7 @@ impl BVM {
                 // Greater or equal than is Not(strictly less)
                 // ---> This is strictly lower than
                 binop_instrs.push(slt(t0, t0, t1).comment("Begin BinOp::Ge")); // Less than (strictly)
-                                                                                // ---> This is the opposite
+                                                                               // ---> This is the opposite
                 binop_instrs.push(xori(t0, t0, 1).comment("Finish BinOp::Ge"));
                 // Do it in place
             }
@@ -455,6 +561,110 @@ impl BVM {
         binop_instrs.append(&mut self.push(t0));
 
         binop_instrs
+    }
+
+    //? Helper method to generate code for functions
+
+    //* stack frame layout on call:
+    //
+    // 16[fp]    arg 1
+    // 12[fp]    arg 2
+    //  8[fp]    arg 3
+    //  4[fp]    ra
+    //  0[fp]    old_fp
+    // -4[fp]    local 1
+    // -8[fp]    local 2, etc.
+    fn process_func_call(&mut self, name: String, args: Arguments) -> Instrs {
+        // A function call.
+        // It shall initialize the new scope and put the correct values in the stack.
+        // Then, it shall jump to the function definition.
+        // Finally, it shall return the value of the function and remove the scope.
+
+        let mut func_instrs = Instrs::new();
+
+        let nb_args = args.0.len();
+        if nb_args > 3 {
+            // We only support 3 arguments for now
+            panic!("Only 3 arguments are supported for now");
+        }
+
+        // prelude
+        func_instrs.append(&mut self.add_scope()); // Add the new scope to define the function arguments
+        for i in 0..nb_args {
+            // Generate code for each argument
+            let arg_offset = 16 - i as i32 * 4;
+            let arg_expr = args.0.get(i).unwrap().clone();
+            func_instrs.append(&mut self.process_expr(arg_expr)); // The value is now located on top of the stack
+            func_instrs.append(&mut self.pop(t0)); // Pop the value to t0
+            func_instrs.push(
+                sw(t0, arg_offset as i16, fp).comment(
+                    // Store argument value from register t0 to the correct argument position in the stack
+                    format!(
+                        "Set the value of argument {} in the stack at relative position {} to value of t0",
+                        i, arg_offset
+                    )
+                    .as_str(),
+                ),
+            );
+        }
+
+        // Function call
+        let func_offset = self.get_function_offset(&name).unwrap();
+        //TODO: Fix the offset value as it is the offset in the instructions memory, from the very beginning, not relative.
+        //TODO: need to get a way to find the relative offset of the function in the instructions memory
+        //TODO: or to jump at an absolute offset in the instructions memory
+        func_instrs
+            .push(bal(func_offset as i16).comment(format!("Branch and link to the function definition of '{}'", name).as_str()));
+
+        // postlude
+        // We can now remove the scope of the function
+        func_instrs.append(&mut self.remove_scope());
+
+        // If the function returns a value, we need to return it
+        // To do so, we need to check if the function returns a value or not (it is stored in t1: 1 if there is a return value, 0 if there is none)
+        func_instrs.push(
+            beq(t1, zero, 1).comment(format!("Function '{}' does not return a value, skip the return value", name).as_str()),
+        );
+        func_instrs.append(&mut self.push(t0));
+
+        func_instrs
+    }
+
+    fn process_func_def(&mut self, fd: FnDeclaration) -> Instrs {
+        // A function shall take the values of its arguments from the frame layout at offsets 16, 12, and 8.
+        // The new scope to put the calling attributes in will have already be generated by the caller.
+        // This manages the function body.
+        let mut func_instrs = Instrs::new();
+
+        // We need to add the parameters to the scope to be able to reach them
+        let func_scope = self.var_env.last_mut().unwrap();
+
+        let nb_params = min(fd.parameters.0.len(), 3); // We only support 3 arguments for now
+        for i in 0..nb_params {
+            let param_id = fd.parameters.0.get(i).unwrap().id.clone();
+            func_scope.vars.insert(param_id, (16 + i * 4) as u32); // Each parameter is 4 bytes and starts at +16
+        }
+
+        // Then, we need to process the block of the function
+        func_instrs.append(&mut self.process_block(fd.body));
+
+        // At the end, we need to return the value of the last instruction if the function returns a value
+        // At this point, since the block has been processed, the last value is at the top of the stack
+        // We need to pop it to t0
+        // To show the caller that there is a return value, we will store in t1 whether the function returns a value or not
+        // It will be 1 if there is one, and 0 if there is none (boolean "does the function return a value?")
+        if fd.ty.is_some() {
+            func_instrs.append(&mut self.pop(t0));
+            func_instrs.push(addi(t1, zero, 1).comment("Function returns a value"));
+        } else {
+            func_instrs.push(addi(t1, zero, 0).comment("Function returns no value"));
+        }
+
+        // We can jump back to the caller, which will handle the return value and removing the scope
+        func_instrs.push(lw(ra, 4, fp).comment("Restore the return address to jump back to the caller"));
+        func_instrs.push(jr(ra).comment("Return to the caller"));
+
+        func_instrs
     }
 
     //? Helper methods to generate code for expressions
@@ -509,9 +719,7 @@ impl BVM {
             }
             Expr::UnOp(op, expr) => expr_instrs.append(&mut self.process_unop(op, *expr)),
             Expr::Par(expr) => expr_instrs.append(&mut self.process_expr(*expr)),
-            Expr::Call(name, args) => {
-                todo!() //TODO: Add support for function calls
-            }
+            Expr::Call(name, args) => expr_instrs.append(&mut self.process_func_call(name, args)),
             Expr::IfThenElse(cond, then_block, else_block) => {
                 // Process the condition
                 expr_instrs.append(&mut self.process_expr(*cond)); // It is located in t0, AND at the top of the stack
@@ -618,9 +826,8 @@ impl BVM {
                 let nb_block_instrs = block_instrs.len() as i16 + 1; // Needs +1 because will have a final jump back to the condition instruction
 
                 // If the condition is false, we jump and avoid the block, and the jump back to the condition
-                while_instrs.push(
-                    beq(t0, zero, nb_block_instrs).comment("While jump on false condition"),
-                );
+                while_instrs
+                    .push(beq(t0, zero, nb_block_instrs).comment("While jump on false condition"));
 
                 // Then we can add the block instructions
                 while_instrs.append(&mut block_instrs);
@@ -630,15 +837,42 @@ impl BVM {
                 while_instrs.push(b(jump_back_nb).comment("While jump back to condition"));
 
                 stmt_instrs.append(&mut while_instrs);
-            },
+            }
             Statement::Expr(expr) => stmt_instrs.append(&mut self.process_expr(expr)),
-            Statement::Fn(fn_decl) => todo!(), //TODO: Add support for function declarations
+            Statement::Fn(fn_decl) => {} // Functions definitions are processed when entering a block
         }
 
         stmt_instrs
     }
 
-    //? Helper methods to generate code for blocks
+    //? Helper method to generate code for blocks
+
+    fn scan_block_functions(&mut self, block: Block) -> Instrs {
+
+        let mut func_instrs = Instrs::new();
+
+        for stmt in block.statements {
+            match stmt {
+                Statement::Fn(fn_decl) => {
+                    // We need to store the position of the function in the instructions memory
+                    let func_offset = self.instructions.len() as u32 + 1; // +1 because we will have to add the jump instruction before each function
+                    let func_name = fn_decl.id.clone();
+                    self.define_function(&func_name, func_offset);
+                    func_instrs.append(&mut self.process_func_def(fn_decl));
+                }
+                _ => (),
+            }
+        }
+
+        // Now, we have to add a jump instruction before the definition of the block of functions to avoid calling them
+        let jump_offset = func_instrs.len() as i16;
+
+        let mut final_instrs = Instrs::new();
+        final_instrs.push(b(jump_offset).comment("Jump over the block of functions"));
+        final_instrs.append(&mut func_instrs);
+
+        final_instrs
+    }
 
     fn process_block(&mut self, block: Block) -> Instrs {
         let mut block_instrs = Instrs::new();
@@ -646,6 +880,9 @@ impl BVM {
         // A block starts by adding a new scope
         let mut scope_instr = self.add_scope();
         block_instrs.append(&mut scope_instr);
+
+        // Then we scan the block to find the functions
+        block_instrs.append(&mut self.scan_block_functions(block.clone()));
 
         // Then, it processes all the statements one by one
         // No need to check anything here, as it will have been done by the type checker
@@ -668,5 +905,11 @@ impl BVM {
         }
 
         block_instrs
+    }
+
+    //? Helper method to generate code for programs
+
+    fn process_prog(&mut self, prog: Prog) -> Instrs {
+        todo!("Programs are not yet supported")
     }
 }

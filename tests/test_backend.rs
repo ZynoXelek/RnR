@@ -440,6 +440,8 @@ mod test_bvm {
     //? Statements -----------------------------------------
     // as simple blocks
 
+    //? Lets
+
     #[test]
     fn test_simple_let() {
         // Get the resulting mips
@@ -530,6 +532,8 @@ mod test_bvm {
         assert_eq!(mips.rf.get(t0), 7);
     }
 
+    //? Ifs
+
     #[test]
     fn test_simple_if_then_else_1() {
         // Get the resulting mips
@@ -588,6 +592,8 @@ mod test_bvm {
         // Check the result of the mips
         assert_eq!(mips.rf.get(t0), 6);
     }
+
+    //? Assignments
 
     #[test]
     fn test_assign() {
@@ -753,6 +759,8 @@ mod test_bvm {
         assert_eq!(mips.rf.get(t0), 7);
     }
 
+    //? Whiles
+
     #[test]
     fn test_while_false() {
         // Get the resulting mips
@@ -827,5 +835,138 @@ mod test_bvm {
 
         // Check the result of the mips
         assert_eq!(mips.rf.get(t0), (-11 as i32) as u32);
+    }
+
+    //? Functions
+
+    #[test]
+    fn test_simple_func_1() {
+        // Get the resulting mips
+        let mips = parse_mips::<Block>(
+        "
+        {
+            fn foo() -> i32 {
+                1
+            }
+
+            foo()
+        }
+        "
+        ).unwrap();
+
+        // Check the result of the mips
+        assert_eq!(mips.rf.get(t0), 1);
+    }
+
+    #[test]
+    fn test_simple_func_2() {
+        // Get the resulting mips
+        let mips = parse_mips::<Block>(
+        "
+        {
+            let a = 5;
+
+            fn foo() -> i32 {
+                1
+            }
+            fn bar() -> i32 {
+                3
+            }
+
+            a + foo()
+        }
+        "
+        ).unwrap();
+
+        // Check the result of the mips
+        assert_eq!(mips.rf.get(t0), 6);
+    }
+
+    #[test]
+    fn test_simple_func_with_args() {
+        // Get the resulting mips
+        let mips = parse_mips::<Block>(
+        "
+        {
+            fn add(a: i32, b: i32) -> i32 {
+                a + b
+            }
+
+            add(2, 3)
+        }
+        "
+        ).unwrap();
+
+        // Check the result of the mips
+        assert_eq!(mips.rf.get(t0), 5);
+    }
+
+
+    #[test]
+    fn test_simple_func_called_before() {
+        // Get the resulting mips
+        let mips = parse_mips::<Block>(
+        "
+        {
+            add(2, 3)
+
+            fn add(a: i32, b: i32) -> i32 {
+                a + b
+            }
+        }
+        "
+        ).unwrap();
+
+        // Check the result of the mips
+        assert_eq!(mips.rf.get(t0), 5);
+    }
+
+    #[test]
+    fn test_recursion() {
+        // Get the resulting mips
+        let mips = parse_mips::<Block>(
+        "
+        {
+            fn fact(n: i32) -> i32 {
+                if n == 0 {
+                    1
+                } else {
+                    n * fact(n - 1)
+                }
+            }
+
+            fact(5)
+        }
+        "
+        ).unwrap();
+
+        // Check the result of the mips
+        assert_eq!(mips.rf.get(t0), 120);
+    }
+
+    //? Programs
+
+    #[test]
+    fn test_simple_prog() {
+        // Get the resulting mips
+        let mips = parse_mips::<Prog>(
+        "
+        {
+            fn add(a: i32, b: i32) -> i32 {
+                a + b
+            }
+
+            fn main() {
+                let a = add(2, 3); // 5
+                let b = add(4, 5); // 9
+                let c = a + b; // 14
+                c;
+            }
+        }
+        "
+        ).unwrap();
+
+        // Check the result of the mips
+        assert_eq!(mips.rf.get(t0), 14); // C is in t0 at the end, even though the function does not return anything
     }
 }
