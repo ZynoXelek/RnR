@@ -71,9 +71,12 @@ YOUR CHANGES/ADDED FEATURES HERE
 - Implement definition of uninitialized variables.
 - Fix if and while issues.
 
+## 2024-12-15
+
+- Finished implementing functions and programs. Recursive functions can also be used.
+
 ## TODO
 
-- Implement functions for the backend
 - Implement references
 - Write type rules
 - Add support for CONSTANT expression in array size, and any non unit type expression in the init value during array definition.

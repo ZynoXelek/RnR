@@ -60,7 +60,20 @@ where
     let mut mips = bl.get_mips()?;
 
     // Evaluate it
-    // mips.run();
+    _ = mips.run();
+
+    Ok(mips)
+}
+
+// Useful to test the code generation without risking to run into an infinite loop
+pub fn parse_mips_no_run<T1>(s: &str) -> Result<Mips, Error>
+where
+    T1: syn::parse::Parse + std::fmt::Display + GetMips,
+{
+    let bl = parse::<T1>(s);
+    let mips = bl.get_mips()?;
+
+    // Do not evaluate it yet
 
     Ok(mips)
 }

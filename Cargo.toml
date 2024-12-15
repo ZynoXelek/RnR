@@ -9,6 +9,7 @@ quote = "1.0.33"
 regex = "1.10.2"
 structopt = "0.3.26"
 mips = { git = "https://vesuvio-git.neteq.ltu.se/pln/mips.git" }
+#mips = { path = "../mips" } # local version for debugging with prints
 
 [dependencies.syn]
 features = ["full", "extra-traits"]
