@@ -60,7 +60,7 @@ where
     let mut mips = bl.get_mips()?;
 
     // Evaluate it
-    mips.run();
+    // mips.run();
 
     Ok(mips)
 }

@@ -146,14 +146,16 @@ impl GetMips for Prog {
 pub struct BVM {
     var_env: Vec<Scope>, // Tracks the variables in the current scope
 
-    // Stores the current instructions
-    instructions: Instrs,
+    // Manage instructions and be able to get jump offsets
+    pc: u32,              // Program counter (used to keep track of the local instructions even when they are not added yet)
+    instructions: Instrs, // Stores the current instructions
 }
 
 impl BVM {
     pub fn new() -> Self {
         let mut bvm = Self {
             var_env: vec![],
+            pc: 0,
             instructions: Instrs::new(),
         };
 
@@ -174,15 +176,24 @@ impl BVM {
     }
 
     fn add_instrs(&mut self, instrs: Instrs) {
+        // Update the program counter
         for instr in instrs.iter() {
             self.add_instr(instr.clone());
+
+            // // Update the program counter
+            // self.pc += 1;
         }
     }
 
     pub fn pretty_print_instructions(&self) {
-        println!("BVM Instructions:");
+        println!(
+            "BVM Instructions state:\npc (number of instructions): {}\nInstructions:",
+            self.pc
+        );
+        let mut i = 0;
         for instr in self.instructions.iter() {
-            println!("{}", instr);
+            println!("{}\t{}", i, instr);
+            i += 1;
         }
     }
 
@@ -200,25 +211,40 @@ impl BVM {
 
     fn add_scope(&mut self) -> Instrs {
         let new_scope = Scope::new();
+        let scope_id = self.var_env.len();
 
         let mut instrs = Instrs::new();
 
         instrs.push(
             addiu(sp, sp, -(new_scope.size as i16)).comment(
                 format!(
-                    "Allocate default space for the new scope (id {})",
-                    self.var_env.len()
+                    "ADD_SCOPE {}: Allocate default space for the new scope",
+                    scope_id
                 )
                 .as_str(),
             ),
         );
 
         // Then, push the current frame pointer, and set the new frame pointer to the current stack pointer
-        instrs.push(sw(ra, 4, sp).comment("Save the return address"));
-        instrs.push(sw(fp, 0, sp).comment("Save the old frame pointer"));
         instrs.push(
-            addi(fp, sp, 0).comment("Set the new frame pointer to the current stack pointer"),
+            sw(ra, 4, sp)
+                .comment(format!("ADD_SCOPE {}: Save the return address", scope_id).as_str()),
         );
+        instrs.push(
+            sw(fp, 0, sp)
+                .comment(format!("ADD_SCOPE {}: Save the old frame pointer", scope_id).as_str()),
+        );
+        instrs.push(
+            addi(fp, sp, 0).comment(
+                format!(
+                    "ADD_SCOPE {}: Set the new frame pointer to the current stack pointer",
+                    scope_id
+                )
+                .as_str(),
+            ),
+        );
+
+        self.pc += 4;
 
         self.var_env.push(new_scope);
 
@@ -227,25 +253,32 @@ impl BVM {
 
     fn remove_scope(&mut self) -> Instrs {
         let scope = self.var_env.pop().unwrap(); // Get last scope
-
-        //? Debug
-        eprintln!("Removing following scope:\n{}", scope);
+        let scope_id = self.var_env.len();
 
         let mut instrs = Instrs::new();
 
         // Restore the old frame pointer and the return address
-        instrs.push(lw(ra, 4, fp).comment("Restore the return address"));
-        instrs.push(lw(fp, 0, fp).comment("Restore the old frame pointer"));
+        instrs
+            .push(lw(ra, 4, fp).comment(
+                format!("REMOVE_SCOPE {}: Restore the return address", scope_id).as_str(),
+            ));
+        instrs.push(
+            lw(fp, 0, fp).comment(
+                format!("REMOVE_SCOPE {}: Restore the old frame pointer", scope_id).as_str(),
+            ),
+        );
 
         instrs.push(
             addiu(sp, sp, scope.size as i16).comment(
                 format!(
-                    "Deallocate space used by the scope (id {})",
-                    self.var_env.len()
+                    "REMOVE_SCOPE {}: Deallocate space used by the scope",
+                    scope_id
                 )
                 .as_str(),
             ),
         );
+
+        self.pc += 3;
 
         instrs
     }
@@ -310,10 +343,16 @@ impl BVM {
     fn push(&mut self, reg: Reg) -> Instrs {
         let mut push_instrs = Instrs::new();
 
-        push_instrs.push(addiu(sp, sp, -4).comment("Allocate space on the stack"));
         push_instrs.push(
-            sw(reg, 0, sp).comment(format!("Store register {:?} on the stack", reg).as_str()),
+            addiu(sp, sp, -4)
+                .comment(format!("PUSH {:?}: Allocate space on the stack", reg).as_str()),
         );
+        push_instrs
+            .push(sw(reg, 0, sp).comment(
+                format!("PUSH {:?}: Store register {:?} on the stack", reg, reg).as_str(),
+            ));
+
+        self.pc += 2;
 
         push_instrs
     }
@@ -322,9 +361,16 @@ impl BVM {
         let mut pop_instrs = Instrs::new();
 
         pop_instrs.push(
-            lw(reg, 0, sp).comment(format!("Load register {:?} from the stack", reg).as_str()),
+            lw(reg, 0, sp).comment(
+                format!("POP TO {:?}: Load register {:?} from the stack", reg, reg).as_str(),
+            ),
         );
-        pop_instrs.push(addiu(sp, sp, 4).comment("Deallocate space on the stack"));
+        pop_instrs.push(
+            addiu(sp, sp, 4)
+                .comment(format!("POP TO {:?}: Deallocate space on the stack", reg).as_str()),
+        );
+
+        self.pc += 2;
 
         pop_instrs
     }
@@ -340,10 +386,12 @@ impl BVM {
         match op {
             UnOp::Bang => {
                 unop_instrs.push(xori(t0, t0, 1).comment("Proceed UnOp::Bang"));
+                self.pc += 1;
                 // Logical negation
             }
             UnOp::Neg => {
                 unop_instrs.push(subu(t0, zero, t0).comment("Proceed UnOp::Neg"));
+                self.pc += 1;
                 // Numeric negation
             }
         }
@@ -368,10 +416,12 @@ impl BVM {
             // Integer operations
             BinOp::Add => {
                 binop_instrs.push(addu(t0, t0, t1).comment("Proceed BinOp::Add"));
+                self.pc += 1;
             }
             BinOp::Sub => {
                 // Handles the subtraction overflow when going to negative values by using subu
                 binop_instrs.push(subu(t0, t0, t1).comment("Proceed BinOp::Sub"));
+                self.pc += 1;
             }
             BinOp::Mul => {
                 // For a multiplication, we need to initialize a counter to do the correct number of multiplications
@@ -419,6 +469,7 @@ impl BVM {
                         "Negate the result (the counter was negative) (End multiplication)",
                     ),
                 );
+                self.pc += 13;
             }
             BinOp::Div => {
                 // For a division, we need to count the number of times we can subtract the right operand from the left operand
@@ -501,13 +552,17 @@ impl BVM {
                         "Negate the result (the right operand was negative) (End division)",
                     ),
                 );
+
+                self.pc += 21;
             }
             // Boolean only operations
             BinOp::And => {
                 binop_instrs.push(and(t0, t0, t1).comment("Proceed BinOp::And"));
+                self.pc += 1;
             }
             BinOp::Or => {
                 binop_instrs.push(or(t0, t0, t1).comment("Proceed BinOp::Or"));
+                self.pc += 1;
             }
             // Comparison operations
             BinOp::Eq => {
@@ -516,6 +571,7 @@ impl BVM {
                 binop_instrs.push(b(1)); // Then we jump the next instruction
                 binop_instrs.push(addi(t0, zero, 1).comment("Finish BinOp::Eq"));
                 // Here, the result if true
+                self.pc += 4;
             }
             BinOp::Ne => {
                 binop_instrs.push(bne(t0, t1, 2).comment("Begin BinOp::Ne")); // If equal, jump two instructions
@@ -523,10 +579,12 @@ impl BVM {
                 binop_instrs.push(b(1)); // Then we jump the next instruction
                 binop_instrs.push(addi(t0, zero, 1).comment("Finish BinOp::Ne"));
                 // Here, the result if true
+                self.pc += 4;
             }
             BinOp::Lt => {
                 binop_instrs.push(slt(t0, t0, t1).comment("Proceed BinOp::Lt"));
                 // Less than (strictly)
+                self.pc += 1;
             }
             BinOp::Le => {
                 binop_instrs.push(beq(t0, t1, 2).comment("Begin BinOp::Le")); // If equal, jump two instructions
@@ -534,6 +592,7 @@ impl BVM {
                 binop_instrs.push(b(1)); // Then we jump the next instruction
                 binop_instrs.push(addi(t0, zero, 1).comment("Finish BinOp::Le"));
                 // Here, the result if true
+                self.pc += 4;
             }
             BinOp::Gt => {
                 // Greater than (strictly) is Not(less than or equal)
@@ -545,6 +604,7 @@ impl BVM {
                                                       // ---> This is the opposite
                 binop_instrs.push(xori(t0, t0, 1).comment("Finish BinOp::Gt"));
                 // Do it in place
+                self.pc += 5;
             }
             BinOp::Ge => {
                 // Greater or equal than is Not(strictly less)
@@ -553,6 +613,7 @@ impl BVM {
                                                                                // ---> This is the opposite
                 binop_instrs.push(xori(t0, t0, 1).comment("Finish BinOp::Ge"));
                 // Do it in place
+                self.pc += 2;
             }
             BinOp::Get => todo!(), //TODO: Add support for array operations
         }
@@ -600,21 +661,30 @@ impl BVM {
                 sw(t0, arg_offset as i16, fp).comment(
                     // Store argument value from register t0 to the correct argument position in the stack
                     format!(
-                        "Set the value of argument {} in the stack at relative position {} to value of t0",
-                        i, arg_offset
+                        "FUNC_CALL '{}': Set the value of argument {} in the stack at relative position {} to value of t0",
+                        name, i, arg_offset
                     )
                     .as_str(),
                 ),
             );
+            self.pc += 1;
         }
 
         // Function call
         let func_offset = self.get_function_offset(&name).unwrap();
-        //TODO: Fix the offset value as it is the offset in the instructions memory, from the very beginning, not relative.
-        //TODO: need to get a way to find the relative offset of the function in the instructions memory
-        //TODO: or to jump at an absolute offset in the instructions memory
-        func_instrs
-            .push(bal(func_offset as i16).comment(format!("Branch and link to the function definition of '{}'", name).as_str()));
+        let func_offset = func_offset as i32 - self.pc as i32;
+        
+        //? Debug
+        eprintln!(
+            "pc: {}, Function offset: {}",
+            self.pc, func_offset
+        );
+
+        func_instrs.push(
+            bal(func_offset as i16).comment(
+                format!("FUNC_CALL '{}': Branch and link to the function definition", name).as_str(),
+            ),
+        );
 
         // postlude
         // We can now remove the scope of the function
@@ -623,8 +693,17 @@ impl BVM {
         // If the function returns a value, we need to return it
         // To do so, we need to check if the function returns a value or not (it is stored in t1: 1 if there is a return value, 0 if there is none)
         func_instrs.push(
-            beq(t1, zero, 1).comment(format!("Function '{}' does not return a value, skip the return value", name).as_str()),
+            beq(t1, zero, 1).comment(
+                format!(
+                    "FUNC_CALL '{}': Function does not return a value, skip the return value",
+                    name
+                )
+                .as_str(),
+            ),
         );
+
+        self.pc += 2;
+
         func_instrs.append(&mut self.push(t0));
 
         func_instrs
@@ -635,6 +714,7 @@ impl BVM {
         // The new scope to put the calling attributes in will have already be generated by the caller.
         // This manages the function body.
         let mut func_instrs = Instrs::new();
+        let func_name = fd.id.clone();
 
         // We need to add the parameters to the scope to be able to reach them
         let func_scope = self.var_env.last_mut().unwrap();
@@ -644,6 +724,11 @@ impl BVM {
             let param_id = fd.parameters.0.get(i).unwrap().id.clone();
             func_scope.vars.insert(param_id, (16 + i * 4) as u32); // Each parameter is 4 bytes and starts at +16
         }
+
+        // We need to store the position of the function in the instructions memory
+        // Compute local pc value
+        eprintln!("Func '{}' final offset: {}", fd.id, self.pc);
+        self.define_function(&func_name, self.pc);
 
         // Then, we need to process the block of the function
         func_instrs.append(&mut self.process_block(fd.body));
@@ -655,14 +740,36 @@ impl BVM {
         // It will be 1 if there is one, and 0 if there is none (boolean "does the function return a value?")
         if fd.ty.is_some() {
             func_instrs.append(&mut self.pop(t0));
-            func_instrs.push(addi(t1, zero, 1).comment("Function returns a value"));
+            func_instrs.push(
+                addi(t1, zero, 1).comment(
+                    format!("FUNC_DEF '{}': Function returns a value", func_name).as_str(),
+                ),
+            );
         } else {
-            func_instrs.push(addi(t1, zero, 0).comment("Function returns no value"));
+            func_instrs.push(
+                addi(t1, zero, 0).comment(
+                    format!("FUNC_DEF '{}': Function returns no value", func_name).as_str(),
+                ),
+            );
         }
 
         // We can jump back to the caller, which will handle the return value and removing the scope
-        func_instrs.push(lw(ra, 4, fp).comment("Restore the return address to jump back to the caller"));
-        func_instrs.push(jr(ra).comment("Return to the caller"));
+        //TODO: May look into ra value. There might be an issue here as it looks like the program is infinite looping
+        //TODO: ra may not be correctly set up by the branch and link of the function call...?
+        func_instrs.push(
+            lw(ra, 4, fp).comment(
+                format!(
+                    "FUNC_DEF '{}': Restore the return address to jump back to the caller",
+                    func_name
+                )
+                .as_str(),
+            ),
+        );
+        func_instrs.push(
+            jr(ra).comment(format!("FUNC_DEF '{}': Return to the caller", func_name).as_str()),
+        );
+
+        self.pc += 4;
 
         func_instrs
     }
@@ -680,6 +787,7 @@ impl BVM {
                             addi(t0, zero, i as i16)
                                 .comment(format!("Load integer {} in t0", i).as_str()),
                         );
+                        self.pc += 1;
                         expr_instrs.append(&mut self.push(t0));
                     }
                     Literal::Bool(b) => {
@@ -687,6 +795,7 @@ impl BVM {
                             addi(t0, zero, b as i16)
                                 .comment(format!("Load boolean {} in t0", b).as_str()),
                         );
+                        self.pc += 1;
                         expr_instrs.append(&mut self.push(t0));
                     }
                     _ => todo!(), //TODO: Add support for other literals
@@ -708,6 +817,7 @@ impl BVM {
                                 .as_str(),
                             ),
                         );
+                        self.pc += 1;
                         expr_instrs.append(&mut self.push(t0)); // Then push the value to the stack
                     }
                     // This is unreachable because the type checker should have checked this before
@@ -738,6 +848,7 @@ impl BVM {
                 expr_instrs.push(
                     beq(t0, zero, nb_then_instrs).comment("IfThenElse jump on false condition"),
                 );
+                self.pc += 1;
                 // Now we can put the then block
                 expr_instrs.append(&mut then_instrs);
 
@@ -748,6 +859,7 @@ impl BVM {
 
                     // If there is an else block, we should jump after the then block
                     expr_instrs.push(b(nb_else_instrs).comment("IfThenElse jump after then block"));
+                    self.pc += 1;
                     // Now we can put the else block
                     expr_instrs.append(&mut else_instrs);
                 }
@@ -770,6 +882,7 @@ impl BVM {
                 } else {
                     // If there is no expression, we just define the variable. It will be initialized to 0
                     stmt_instrs.push(addi(t0, zero, 0).comment("Initialize variable to 0"));
+                    self.pc += 1;
                     stmt_instrs.append(&mut self.push(t0)); // Push the value to the stack
                 }
 
@@ -805,6 +918,7 @@ impl BVM {
                                         .as_str(),
                                     ),
                                 );
+                                self.pc += 1;
                             }
                             // This is unreachable because the type checker should have checked this before
                             None => unreachable!("Variable '{}' not defined", name),
@@ -836,6 +950,8 @@ impl BVM {
                 let jump_back_nb = -(while_instrs.len() as i16) - 1; // Needs -1 because the jump is relative to the next instruction
                 while_instrs.push(b(jump_back_nb).comment("While jump back to condition"));
 
+                self.pc += 2;
+
                 stmt_instrs.append(&mut while_instrs);
             }
             Statement::Expr(expr) => stmt_instrs.append(&mut self.process_expr(expr)),
@@ -848,16 +964,14 @@ impl BVM {
     //? Helper method to generate code for blocks
 
     fn scan_block_functions(&mut self, block: Block) -> Instrs {
-
         let mut func_instrs = Instrs::new();
+
+        // We will add the jump instruction at the end of the block, but we update pc here for the offsets
+        self.pc += 1;
 
         for stmt in block.statements {
             match stmt {
                 Statement::Fn(fn_decl) => {
-                    // We need to store the position of the function in the instructions memory
-                    let func_offset = self.instructions.len() as u32 + 1; // +1 because we will have to add the jump instruction before each function
-                    let func_name = fn_decl.id.clone();
-                    self.define_function(&func_name, func_offset);
                     func_instrs.append(&mut self.process_func_def(fn_decl));
                 }
                 _ => (),

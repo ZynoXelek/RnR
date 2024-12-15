@@ -842,7 +842,7 @@ mod test_bvm {
     #[test]
     fn test_simple_func_1() {
         // Get the resulting mips
-        let mips = parse_mips::<Block>(
+        let mut mips = parse_mips::<Block>(
         "
         {
             fn foo() -> i32 {
@@ -853,6 +853,8 @@ mod test_bvm {
         }
         "
         ).unwrap();
+
+        // mips.run();
 
         // Check the result of the mips
         assert_eq!(mips.rf.get(t0), 1);
