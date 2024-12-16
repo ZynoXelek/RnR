@@ -325,6 +325,7 @@ pub enum TypeError {
     MainWithInvalidType { // In Rust, a main function should return either () or Result<(), E>, where E implements the std::error::Error trait.
         found: Type,
     },
+    MainReturnsUninit,
     BinOpTypeMismatch {
         op: BinOp,
         left: Type,
@@ -424,6 +425,10 @@ impl TypeError {
 
     pub fn main_with_invalid_type(found: Type) -> Self {
         TypeError::MainWithInvalidType { found }
+    }
+
+    pub fn main_returns_uninit() -> Self {
+        TypeError::MainReturnsUninit
     }
 
     pub fn binop_type_mismatch(op: BinOp, left: Type, right: Type) -> Self {
@@ -555,6 +560,9 @@ impl fmt::Display for TypeError {
             }
             TypeError::MainWithInvalidType { found } => {
                 write!(f, "Main function should return unit type, found '{}'", found)
+            }
+            TypeError::MainReturnsUninit => {
+                write!(f, "Main function returns uninitialized variable")
             }
             TypeError::BinOpTypeMismatch { op, left, right } => {
                 write!(

@@ -311,7 +311,18 @@ impl EvalType<TypeVal> for Prog {
                 }
 
                 // Everything is fine
-                return tvm.eval_type_block(&decl.body); // It should therefore be of Unit Type
+                let prog_type = tvm.eval_type_block(&decl.body).unwrap(); // It should therefore be of Unit Type
+                let prog_type = prog_type.get_type();
+                match prog_type {
+                    Some(t) => {
+                        if t == Type::Unit {
+                            return Ok(TypeVal::Type(Type::Unit));
+                        } else {
+                            return Err(TypeError::main_with_invalid_type(t));
+                        }
+                    }
+                    None => return Err(TypeError::main_returns_uninit()),
+                }
             }
         }
         Err(TypeError::main_not_found())

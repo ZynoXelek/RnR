@@ -1126,7 +1126,7 @@ mod test_bvm {
     //? Programs
 
     #[test]
-    fn test_simple_prog() {
+    fn test_simple_prog_1() {
         // Get the resulting mips
         let mut mips = parse_mips_no_run::<Prog>(
             "
@@ -1148,6 +1148,30 @@ mod test_bvm {
 
         // Check the result of the mips
         assert_eq!(mips.rf.get(t0), 14); // C is in t0 at the end, even though the function does not return anything
+    }
+
+    #[test]
+    fn test_simple_prog_2() {
+        // Get the resulting mips
+        let mut mips = parse_mips_no_run::<Prog>(
+            "
+        fn add(a: i32, b: i32) -> i32 {
+            a + b
+        }
+        
+        fn main() {
+            let a = 1;
+            let b = 2;
+            let _c = add(a, b);
+        }
+        ",
+        )
+        .unwrap();
+
+        _ = mips.run();
+
+        // Check the result of the mips
+        assert_eq!(mips.rf.get(t0), 3); // _c is in t0 at the end, even though the function does not return anything
     }
 
     #[test]

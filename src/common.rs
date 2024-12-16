@@ -1,4 +1,4 @@
-use mips::vm::Mips;
+use mips::{instrs::Instrs, vm::Mips};
 
 use crate::error::{TypeError, EvalError, Error};
 
@@ -12,6 +12,10 @@ pub trait Eval<T: Clone> {
     fn eval(&self) -> Result<T, EvalError>
     where
         T: Clone;
+}
+
+pub trait GetInstructions {
+    fn get_instructions(&self) -> Result<Instrs, Error>; //TODO: Use custom error
 }
 
 pub trait GetMips {

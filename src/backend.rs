@@ -107,8 +107,8 @@ impl fmt::Display for Scope {
 //?#                                                                                               #
 //?#################################################################################################
 
-impl GetMips for Expr {
-    fn get_mips(&self) -> Result<Mips, Error> {
+impl GetInstructions for Expr {
+    fn get_instructions(&self) -> Result<Instrs, Error> {
         let mut bvm = BVM::new();
 
         let expected_size = bvm.get_expr_len(self.clone());
@@ -120,20 +120,18 @@ impl GetMips for Expr {
                 expected_size,
                 expr_instrs.len()
             );
-        }
 
-        bvm.add_instrs(expr_instrs);
+            bvm.add_instrs(expr_instrs.clone());
 
-        if DEBUG_PRINTS {
             bvm.pretty_print_instructions();
         }
-
-        Ok(bvm.get_mips())
+        
+        Ok(expr_instrs)
     }
 }
 
-impl GetMips for Block {
-    fn get_mips(&self) -> Result<Mips, Error> {
+impl GetInstructions for Block {
+    fn get_instructions(&self) -> Result<Instrs, Error> {
         let mut bvm = BVM::new();
 
         let expected_size = bvm.get_block_len(self.clone());
@@ -145,20 +143,18 @@ impl GetMips for Block {
                 expected_size,
                 block_instrs.len()
             );
-        }
 
-        bvm.add_instrs(block_instrs);
+            bvm.add_instrs(block_instrs.clone());
 
-        if DEBUG_PRINTS {
             bvm.pretty_print_instructions();
         }
 
-        Ok(bvm.get_mips())
+        Ok(block_instrs)
     }
 }
 
-impl GetMips for Prog {
-    fn get_mips(&self) -> Result<Mips, Error> {
+impl GetInstructions for Prog {
+    fn get_instructions(&self) -> Result<Instrs, Error> {
         let mut bvm = BVM::new();
 
         let expected_size = bvm.get_prog_len(self.clone());
@@ -170,16 +166,38 @@ impl GetMips for Prog {
                 expected_size,
                 prog_intrs.len()
             );
-        }
 
-        bvm.add_instrs(prog_intrs);
+            bvm.add_instrs(prog_intrs.clone());
 
-        if DEBUG_PRINTS {
             bvm.pretty_print_instructions();
         }
 
-        Ok(bvm.get_mips())
+        Ok(prog_intrs)
     }
+}
+
+impl<T: GetInstructions> GetMips for T {
+    fn get_mips(&self) -> Result<Mips, Error> {
+        let instrs = self.get_instructions()?;
+        let mips = Mips::new(instrs);
+        Ok(mips)
+    }
+}
+
+//?#################################################################################################
+//?#                                                                                               #
+//?#                                     Format instructions                                       #
+//?#                                                                                               #
+//?#################################################################################################
+
+pub fn get_formatted_instrs(instrs: Instrs) -> String {
+    let mut formatted_instrs = String::new();
+    let mut i = 0;
+    for instr in instrs.iter() {
+        formatted_instrs.push_str(&format!("{}\t{}\n", i, instr));
+        i += 1;
+    }
+    formatted_instrs
 }
 
 //?#################################################################################################
@@ -208,6 +226,10 @@ impl BVM {
         bvm.add_instrs(init_instr);
 
         bvm
+    }
+
+    pub fn get_instructions(&self) -> Instrs {
+        self.instructions.clone()
     }
 
     pub fn get_mips(&self) -> Mips {

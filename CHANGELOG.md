@@ -75,17 +75,38 @@ YOUR CHANGES/ADDED FEATURES HERE
 
 - Finished implementing functions and programs. Recursive functions can also be used.
 
+## 2024-12-16
+
+- Add first version of a CLI. It supports every required commands (`-h`, `-i`, `-a`, `-t`, `--vm`, `-c`, `--asm`, `-r`). However, it looks like the backend run does not work properly while the `test_backend.rs` succeeds on the same example.
+- Lacks better help method (and help options for each option?)
+
 ## TODO
 
-- Implement references
+**Mandatory:**
+
+- Fix backend run
+- CLI improve help and add one for each command
+- Improve custom errors
+- Improve arrays in EBNF
+- Write SOS file
 - Write type rules
+- Re-write README.md
+- Write REFLECTION.md (including some additional feedback on how it went, when it was hard and everything... + What we have learnt)
+
+**Optional:**
+
+Primary:
+
+- Implement arrays in backend
+- Implement references everywhere
+- Implement ownership?
+- Implement custom struct?
+
+Secondary:
+
 - Add support for CONSTANT expression in array size, and any non unit type expression in the init value during array definition.
 - May want to add usize type for indexing (would be useful for ranges as well). May need to add "as" keyword then to convert i32 to usize.
 - Add return statement to be able to return from a while.
 - Similarly, add break statement.
 - Add for loops. (Need to add ranges then, which could benefit from the usize type)
-- Improve custom errors?
-- Implement custom struct?
 - Optimize some evaluations?
-- Improve arrays in EBNF?
-- Write SOS file

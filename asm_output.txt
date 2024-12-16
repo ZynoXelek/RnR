@@ -1,0 +1,80 @@
+0	            Beq 	zero, zero, 68 	(0x0044)	# Jump over the block of functions
+1	            Addiu 	sp, sp, -20 	(0xffec)	# ADD_SCOPE 1: Allocate default space for the new scope
+2	            Sw 		ra, 4[sp] 	(0x0004)	# ADD_SCOPE 1: Save the return address
+3	            Sw 		fp, 0[sp] 	(0x0000)	# ADD_SCOPE 1: Save the old frame pointer
+4	            Addi 	fp, sp, 0 	(0x0000)	# ADD_SCOPE 1: Set the new frame pointer to the current stack pointer
+5	            Beq 	zero, zero, 0 	(0x0000)	# Jump over the block of functions
+6	            Addi 	t0, zero, 1 	(0x0001)	# Expr::Lit: Load integer 1 in t0
+7	            Addiu 	sp, sp, -4 	(0xfffc)	# PUSH t0: Allocate space on the stack
+8	            Sw 		t0, 0[sp] 	(0x0000)	# PUSH t0: Store register t0 on the stack
+9	            Addi 	t0, zero, 2 	(0x0002)	# Expr::Lit: Load integer 2 in t0
+10	            Addiu 	sp, sp, -4 	(0xfffc)	# PUSH t0: Allocate space on the stack
+11	            Sw 		t0, 0[sp] 	(0x0000)	# PUSH t0: Store register t0 on the stack
+12	            Addiu 	sp, sp, -20 	(0xffec)	# ADD_SCOPE 2: Allocate default space for the new scope
+13	            Sw 		ra, 4[sp] 	(0x0004)	# ADD_SCOPE 2: Save the return address
+14	            Sw 		fp, 0[sp] 	(0x0000)	# ADD_SCOPE 2: Save the old frame pointer
+15	            Addi 	fp, sp, 0 	(0x0000)	# ADD_SCOPE 2: Set the new frame pointer to the current stack pointer
+16	            Lw 		t0, 24[fp] 	(0x0018)	# Expr::Ident: Load the value of a from the stack at relative position 24 in t0
+17	            Addiu 	sp, sp, -4 	(0xfffc)	# PUSH t0: Allocate space on the stack
+18	            Sw 		t0, 0[sp] 	(0x0000)	# PUSH t0: Store register t0 on the stack
+19	            Lw 		t0, 0[sp] 	(0x0000)	# POP TO t0: Load register t0 from the stack
+20	            Addiu 	sp, sp, 4 	(0x0004)	# POP TO t0: Deallocate space on the stack
+21	            Sw 		t0, 16[fp] 	(0x0010)	# FUNC_CALL 'add': Set the value of argument 0 in the stack at relative position 16 to value of t0
+22	            Lw 		t0, 20[fp] 	(0x0014)	# Expr::Ident: Load the value of b from the stack at relative position 20 in t0
+23	            Addiu 	sp, sp, -4 	(0xfffc)	# PUSH t0: Allocate space on the stack
+24	            Sw 		t0, 0[sp] 	(0x0000)	# PUSH t0: Store register t0 on the stack
+25	            Lw 		t0, 0[sp] 	(0x0000)	# POP TO t0: Load register t0 from the stack
+26	            Addiu 	sp, sp, 4 	(0x0004)	# POP TO t0: Deallocate space on the stack
+27	            Sw 		t0, 12[fp] 	(0x000c)	# FUNC_CALL 'add': Set the value of argument 1 in the stack at relative position 12 to value of t0
+28	            Blez 	zero, zero, 11 	(0x000b)	# FUNC_CALL 'add': Branch and link to the function definition
+29	            Lw 		ra, 4[fp] 	(0x0004)	# REMOVE_SCOPE 2: Restore the return address
+30	            Lw 		fp, 0[fp] 	(0x0000)	# REMOVE_SCOPE 2: Restore the old frame pointer
+31	            Addiu 	sp, sp, 20 	(0x0014)	# REMOVE_SCOPE 2: Deallocate space used by the scope
+32	            Beq 	zero, t1, 2 	(0x0002)	# FUNC_CALL 'add': If function does not return a value, skip the return value
+33	            Addiu 	sp, sp, -4 	(0xfffc)	# PUSH t0: Allocate space on the stack
+34	            Sw 		t0, 0[sp] 	(0x0000)	# PUSH t0: Store register t0 on the stack
+35	            Lw 		ra, 4[fp] 	(0x0004)	# REMOVE_SCOPE 1: Restore the return address
+36	            Lw 		fp, 0[fp] 	(0x0000)	# REMOVE_SCOPE 1: Restore the old frame pointer
+37	            Addiu 	sp, sp, 32 	(0x0020)	# REMOVE_SCOPE 1: Deallocate space used by the scope
+38	            Addi 	t1, zero, 0 	(0x0000)	# FUNC_DEF 'main': Function returns no value
+39	            Jr 	ra			# FUNC_DEF 'main': Return to the caller
+40	            Addiu 	sp, sp, -20 	(0xffec)	# ADD_SCOPE 1: Allocate default space for the new scope
+41	            Sw 		ra, 4[sp] 	(0x0004)	# ADD_SCOPE 1: Save the return address
+42	            Sw 		fp, 0[sp] 	(0x0000)	# ADD_SCOPE 1: Save the old frame pointer
+43	            Addi 	fp, sp, 0 	(0x0000)	# ADD_SCOPE 1: Set the new frame pointer to the current stack pointer
+44	            Beq 	zero, zero, 0 	(0x0000)	# Jump over the block of functions
+45	            Lw 		t0, 36[fp] 	(0x0024)	# Expr::Ident: Load the value of a from the stack at relative position 36 in t0
+46	            Addiu 	sp, sp, -4 	(0xfffc)	# PUSH t0: Allocate space on the stack
+47	            Sw 		t0, 0[sp] 	(0x0000)	# PUSH t0: Store register t0 on the stack
+48	            Lw 		t0, 32[fp] 	(0x0020)	# Expr::Ident: Load the value of b from the stack at relative position 32 in t0
+49	            Addiu 	sp, sp, -4 	(0xfffc)	# PUSH t0: Allocate space on the stack
+50	            Sw 		t0, 0[sp] 	(0x0000)	# PUSH t0: Store register t0 on the stack
+51	            Lw 		t1, 0[sp] 	(0x0000)	# POP TO t1: Load register t1 from the stack
+52	            Addiu 	sp, sp, 4 	(0x0004)	# POP TO t1: Deallocate space on the stack
+53	            Lw 		t0, 0[sp] 	(0x0000)	# POP TO t0: Load register t0 from the stack
+54	            Addiu 	sp, sp, 4 	(0x0004)	# POP TO t0: Deallocate space on the stack
+55	            Addu 	t0, t0, t1			# Proceed BinOp::Add
+56	            Addiu 	sp, sp, -4 	(0xfffc)	# PUSH t0: Allocate space on the stack
+57	            Sw 		t0, 0[sp] 	(0x0000)	# PUSH t0: Store register t0 on the stack
+58	            Lw 		t0, 0[sp] 	(0x0000)	# POP TO t0: Load register t0 from the stack
+59	            Addiu 	sp, sp, 4 	(0x0004)	# POP TO t0: Deallocate space on the stack
+60	            Lw 		ra, 4[fp] 	(0x0004)	# REMOVE_SCOPE 1: Restore the return address
+61	            Lw 		fp, 0[fp] 	(0x0000)	# REMOVE_SCOPE 1: Restore the old frame pointer
+62	            Addiu 	sp, sp, 20 	(0x0014)	# REMOVE_SCOPE 1: Deallocate space used by the scope
+63	            Addiu 	sp, sp, -4 	(0xfffc)	# PUSH t0: Allocate space on the stack
+64	            Sw 		t0, 0[sp] 	(0x0000)	# PUSH t0: Store register t0 on the stack
+65	            Lw 		t0, 0[sp] 	(0x0000)	# POP TO t0: Load register t0 from the stack
+66	            Addiu 	sp, sp, 4 	(0x0004)	# POP TO t0: Deallocate space on the stack
+67	            Addi 	t1, zero, 1 	(0x0001)	# FUNC_DEF 'add': Function returns a value
+68	            Jr 	ra			# FUNC_DEF 'add': Return to the caller
+69	            Addiu 	sp, sp, -20 	(0xffec)	# ADD_SCOPE 1: Allocate default space for the new scope
+70	            Sw 		ra, 4[sp] 	(0x0004)	# ADD_SCOPE 1: Save the return address
+71	            Sw 		fp, 0[sp] 	(0x0000)	# ADD_SCOPE 1: Save the old frame pointer
+72	            Addi 	fp, sp, 0 	(0x0000)	# ADD_SCOPE 1: Set the new frame pointer to the current stack pointer
+73	            Blez 	zero, zero, -73 	(0xffb7)	# FUNC_CALL 'main': Branch and link to the function definition
+74	            Lw 		ra, 4[fp] 	(0x0004)	# REMOVE_SCOPE 1: Restore the return address
+75	            Lw 		fp, 0[fp] 	(0x0000)	# REMOVE_SCOPE 1: Restore the old frame pointer
+76	            Addiu 	sp, sp, 20 	(0x0014)	# REMOVE_SCOPE 1: Deallocate space used by the scope
+77	            Beq 	zero, t1, 2 	(0x0002)	# FUNC_CALL 'main': If function does not return a value, skip the return value
+78	            Addiu 	sp, sp, -4 	(0xfffc)	# PUSH t0: Allocate space on the stack
+79	            Sw 		t0, 0[sp] 	(0x0000)	# PUSH t0: Store register t0 on the stack
