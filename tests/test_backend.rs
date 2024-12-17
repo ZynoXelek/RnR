@@ -1206,4 +1206,40 @@ mod test_bvm {
         // Check the result of the mips
         assert_eq!(mips.rf.get(t0), 24); // C is in t0 at the end, even though the function does not return anything
     }
+
+    #[test]
+    fn test_simple_prog_with_mutual_recursion() {
+        // Get the resulting mips
+        let mut mips = parse_mips_no_run::<Prog>(
+            "
+        fn is_even(n: i32) -> bool {
+            if n == 0 {
+                true
+            } else {
+                is_odd(n - 1)
+            }
+        }
+
+        fn is_odd(n: i32) -> i32 {
+            if n == 0 {
+                false
+            } else {
+                is_even(n - 1)
+            }
+        }
+
+        fn main() {
+            let a = is_even(5); // false
+            let b = is_odd(5); // true
+            a || b // true
+        }
+        ",
+        )
+        .unwrap();
+
+        _ = mips.run();
+
+        // Check the result of the mips
+        assert_eq!(mips.rf.get(t0), 1);
+    }
 }

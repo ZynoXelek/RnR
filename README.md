@@ -1,141 +1,142 @@
-# d7050e_lab4
+# RnR: Rust in Rust
 
-In `d7050e_lab3` we extended the language with expression blocks allowing sequences of block expressions (commands) together with a VM (providing a natural interpretation). 
+This project aims to implement a compiler able to manage a subset of the Rust language.
 
-In this lab you will continue working on your `d7050e_lab3` implement and extend it with a simple type checker.
+The compiler is coded in Rust, and supports the basics of the Rust language.
 
-## Learning outcomes
+## Types
 
-- The role of semantic analysis in a compiler.
+The implemented types are the following:
 
-- The basics of type environments and type checking.
+- **unit**: the basic unit type
+- **i32**: basic integers
+- **bool**: booleans
+- **String**: to be able to print things in the terminal
+- **Arrays**: arrays can be defined using any of the existing types.
+- **References** (WIP)
 
-- Type inference and simple polymorphism (overloading).
+## Operations
 
-- Mutability check.
-  
-- Optional for higher grades, includes but are not limited to:
+The implemented operations are the following:
+- Unary Operators
+  - **!**: boolean negation
+  - **-**: integer negation
+  - **&**: reference (WIP)
+  - **\***: pointer (WIP)
+- Binary Operators
+  - **+**, **-**, **\***, **/**: basic operations for integers only
+  - **&&**, **||**: basic operations for booleans only
+  - **<**, **<=**, **>=**, **>**: comparison operations for integers and Strings
+  - **==**, **!=**: comparison operations for any type
+  - **\[i\]**: get operation for arrays
 
-  - Arrays.
+## How to use it
 
-  - User defined data structures (structs/enums).
+The compiler can be used thanks to its **CLI** which uses the **clap** crate. It includes basic commands.
 
-  - Formalization of the type system in terms of `inference rules`.
-  
----
+### Basic behavior
 
-## Basics of type checking.
-
-A well typed program in our Rust in Rust language. (Notice, we don't care about mutability yet.)
-
-```rust
-let c: i32 = 4 - 5;
-let b: bool = false || true; 
-b = b || true; 
-c + c;
+The default command is the following one:
+```bash
+rnr
 ```
 
-An illegally typed program:
+This only parses the content of the `main.rs` file located in the current folder. It does not proceed any additional treatment.
 
-```rust
-let c: i32 = 4 - 5;
-let b: bool = false || true; 
-b = b + 1; 
-c + false;
+### Additional subcommands
+
+Here are the possible subcommands you can add to apply other treatments.
+
+#### Get help on commands
+
+You can have additional information using the following subcommand:
+```bash
+-h
+```
+Or
+```bash
+--help
 ```
 
-## Type checking
+#### Change the input file
 
-Rust is a *statically* typed language where type checking is performed at compile time after initial parsing of the input program.
-
-As you will see, type checking resembles the interpreter you implemented in Lab3, where evaluation resolves into types (instead of values).
-
-### Statements
-
-A type environment $`E: Id \rightarrow Type`$ holds bindings from identifiers to types. For the above example, we will start with an empty environment $`E`$. Type checking of an expression block amounts to iterating over the statements (starting from the first), and for each new let binding add it's type to the environment, and for assignments we check that the left and right hand expressions have the same type.
-
-For the first statement `let c: i32 = 4 - 5;` we derive the type of the right hand expression (this is done by recursively traversing the expression).  So for this case we will check and evaluate the type of $`4 - 5`$. The operator $`-`$ expects left and right hand expressions of type $`i32`$ and evaluates to the type $`i32`$. In our simple language we find integer, Boolean (and unit literals) at the leafs.
-
-We then check that the right hand side is of the expected type ($`i32`$) add we add the binding $`c \rightarrow i32`$ to $`E`$. (Similarly the $`||`$ operator expects left and right hand expressions of type $`Bool`$ and evaluates to the type $`Bool`$, etc.).
-
-The second statement `let b: bool = false || true;` is checked as above and we add $`b \rightarrow Bool`$ to $`E`$ (which now holds two bindings).
-
-In the example first, we continue with the `b = b || 1;` and `c + c` block expressions and find them to be well typed. The expression block is not terminated by `;` and we can conclude the type of the block to be $`i32`$ (the type of the last block expression).
-
-In the second example, we will encounter type errors, as the $`+`$ operator is not defined for Boolean types.
-
-### Similarities to interpretation
-
-Similarly to the VM, the type environment can be treated as a stack of scopes, where new entries are added to the top of stack, and lookup is performed starting from the top.
-
-### Differences to interpretation
-
-Type checking starts from the program definition, type checking each top level function. Type checking a function amounts to checking each inner function declaration and the body once (while the interpreter would follow a trace of execution). 
-
-You may chose to either implement a separate environment for functions, or extend the environment to hold $`E: Id \rightarrow FunDecl`$. Functions may not be shadowed in the same scope. You should type check each function when its introduced (added to the environment). The body expression block should be type checked as described above, and its return type checked against the function declaration.
-
-When type checking a function call expression, you need to match each given argument given (expression), against the declared parameter type. The type of function call expression is given by the function declaration.
-
----
-
-## Implementation and workflow
-
-You can choose either to continue working in your Lab3 repository or create a new upstream "d7050e_lab4" (up to you).
-
-Create a new module `type_check.rs` and add that to your library.
-
-Take inspiration from your VM, and start by implementing type checking of literal expressions. 
-
-Hint, you may introduce a function `unify`:
-
-```rust
-fn unify(got: Type, expected: Type) -> Result<Type, Error> {
-    match got == expected {
-        true => Ok(expected),
-        false => Err(format!("expected type {:?}, got type {:?}", expected, got)),
-    }
-}
+You can change the input file from `main.rs` to any other file by adding this subcommand:
+```bash
+-i <relative_input_path>
+```
+Or
+```bash
+--input <relative_input_path>
 ```
 
-Create you own test, (as you will support the same language as the interpreter, you may re-use the VM tests by changing them into type checking tests). Add additional fail tests to cover errors of interests.
+#### Dump the generated AST
 
-Build from there, to support more complex expressions and blocks, until you cover your RnR language.
-
-Use the real Rust language as a reference. Look at the error(s) (rust-analyzer) would produce and try to follow the Rust language for the supported subset. For your type checker it is sufficient to report one error at the time.
-
-All in all, you will learn type checking by experience. You will run into problems and address them along the way. Eventually you might find that a rewrite is favorable, writing complex code cannot be expected to be perfect the first time around. 
-
-### Additional hints:
-
-As RnR does not implement traits, you can mimic this by *overloading* behavior for operators (e.g., comparisons) where applicable.
-
-For type checking the `println!` intrinsic you can see it as a function with `String` and `i32` parameters and `()` return type.
-
-For the type checking tests, you can add these helpers to your `test_util`.
-
-```rust
-/// Assert that type checking fails.
-pub fn assert_type_fail<T>(p: &T)
-where T: Eval<Type>
-{
-    let typ = p.eval();
-    assert!(typ.is_err());
-}
-
-/// Alias for `assert_type_fail` to avoid specifying the generic type parameter.
-pub fn assert_block_type_fail(p: &Block) {
-    assert_type_fail(p);
-}
-
-/// Assert that type checking results in the expected type.
-/// This implicitly means that type checking succeeds.
-pub fn assert_type<T>(p: &T, expected: Type)
-where T: Eval<Type>
-{
-    let typ = p.eval();
-    println!("type checking result: {:?}", typ);
-    assert!(typ.is_ok());
-    let typ = typ.unwrap();
-    assert_eq!(typ, expected);
-}
+You can dump the generated Abstract Syntax Tree from the parsed program in a file of your choice by adding the following subcommand:
+```bash
+-a <relative_output_path>
 ```
+Or
+```bash
+--ast <relative_output_path>
+```
+
+#### Process type checking
+
+You can process type checking on the parsed result by adding the following subcommand:
+```bash
+-t
+```
+Or
+```bash
+--type_check
+```
+
+#### Evaluate the parsed program using the RnR VM
+
+You can process the evaluation of the parsed program using the RnR Virtual Machine by adding the following subcommand:
+```bash
+-v
+```
+Or
+```bash
+--vm
+```
+Or
+```bash
+--virtual_machine
+```
+
+#### Generate the assembler code
+
+You can generate the assembler code corresponding to the parsed program with the RnR backend by adding the following subcommand:
+```bash
+-c
+```
+Or
+```bash
+--code_gen
+```
+
+#### Dump the generated ASM
+
+You can dump the generated ASM from the parsed program in a file of your choice by adding the following subcommand: (It requires that you have used the `-c` or `--code_gen` subcommand)
+```bash
+--asm <relative_output_path>
+```
+
+#### Run the generated ASM
+
+You can run the generated ASM from the parsed program by adding the following subcommand: (It requires that you have used the `-c` or `--code_gen` subcommand)
+```bash
+-r
+```
+Or
+```bash
+--run
+```
+
+## Some additional remarks on the project
+
+### Parser
+
+The RnR parser uses the **syn** crate. It implements a subset of it thanks to the generated **TokenStream**.

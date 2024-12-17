@@ -1,7 +1,5 @@
 # Changelog for RNR
 
-YOUR CHANGES/ADDED FEATURES HERE
-
 ## 2024-11-19
 
 - Complete restructure to reduce re-implementation work. See README.md for up to date information.
@@ -80,6 +78,12 @@ YOUR CHANGES/ADDED FEATURES HERE
 - Add first version of a CLI. It supports every required commands (`-h`, `-i`, `-a`, `-t`, `--vm`, `-c`, `--asm`, `-r`). However, it looks like the backend run does not work properly while the `test_backend.rs` succeeds on the same example.
 - Lacks better help method (and help options for each option?)
 
+## 2024-12-17
+
+- Write `README.md` for the **RnR** project.
+- Write a first iteration of the `type_rules.md`.
+- Fix backend run issue by adding an `Halt` instruction at the end of the main call of a program. Issue was that the VM tried to read another instruction while there were no instructions left.
+
 ## TODO
 
 **Mandatory:**
@@ -90,13 +94,14 @@ YOUR CHANGES/ADDED FEATURES HERE
 - Improve arrays in EBNF
 - Write SOS file
 - Write type rules
-- Re-write README.md
 - Write REFLECTION.md (including some additional feedback on how it went, when it was hard and everything... + What we have learnt)
 
 **Optional:**
 
 Primary:
 
+- Backend optimizations
+- Backend support for functions with any number of arguments (refactor the frame stack to remove arg1, arg2, arg3 and use the intermediate scopes as I already do)
 - Implement arrays in backend
 - Implement references everywhere
 - Implement ownership?

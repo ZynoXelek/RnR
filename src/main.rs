@@ -84,6 +84,7 @@ impl Args {
 const DEFAULT_COLOR: &str = "\x1b[0m";
 const RED_COLOR: &str = "\x1b[31m";
 const GREEN_COLOR: &str = "\x1b[32m";
+const YELLOW_COLOR: &str = "\x1b[33m";
 
 // Parse the content of the file
 
@@ -221,7 +222,7 @@ fn run_subcommand(mips: &mut Mips) -> Result<(), MipsError> {
 
     let result = mips.run();
     match result {
-        Ok(_) => {
+        Ok(_) | Err(MipsError::Halt) => {
             println!(" * Running code: {}success!{}", GREEN_COLOR, DEFAULT_COLOR);
             Ok(())
         }
@@ -264,23 +265,46 @@ fn main() {
         vm_subcommand(prog.clone()).unwrap();
     }
 
+    //? Print a warning if an option that requires a missing previous step is used
+    if args.asm.is_some() && !args.code_gen {
+        eprintln!(
+            "{}Warning: ASM output requested (--asm) without code generation (-c). Ignoring ASM output.{}",
+            YELLOW_COLOR, DEFAULT_COLOR
+        );
+    }
+
+    if args.run && !args.code_gen {
+        eprintln!(
+            "{}Warning: Run requested (-r) without code generation (-c). Ignoring run.{}",
+            YELLOW_COLOR, DEFAULT_COLOR
+        );
+    }
+
     // 4. Code generation
     if args.code_gen {
         println!("\n ----------------- ");
-        let instrs = code_gen_subcommand(prog.clone()).unwrap();
+        let instrs = code_gen_subcommand(prog.clone());
+        if instrs.is_err() {
+            eprintln!(
+                "{}Error: Code generation failed. Skipping ASM and run steps.{}",
+                RED_COLOR, DEFAULT_COLOR
+            );
+            return;
+        }
+        let instrs = instrs.unwrap();
         println!("Generated code:\n{}", get_formatted_instrs(instrs.clone()));
 
         // 5. ASM
         if let Some(asm_path) = &args.asm {
             println!("\n ----------------- ");
-            asm_subcommand(instrs.clone(), asm_path.path.as_str()).unwrap();
+            _ = asm_subcommand(instrs.clone(), asm_path.path.as_str());
+        }
 
-            // 6. Run
-            if args.run {
-                println!("\n ----------------- ");
-                let mut mips = Mips::new(instrs);
-                run_subcommand(&mut mips).unwrap();
-            }
+        // 6. Run
+        if args.run {
+            println!("\n ----------------- ");
+            let mut mips = Mips::new(instrs);
+            _ = run_subcommand(&mut mips);
         }
     }
 }
