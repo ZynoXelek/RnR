@@ -112,7 +112,7 @@ impl GetInstructions for Expr {
         let mut bvm = BVM::new();
 
         let expected_size = bvm.get_expr_len(self.clone());
-        let expr_instrs = bvm.process_expr(self.clone());
+        let mut expr_instrs = bvm.process_expr(self.clone());
 
         if DEBUG_PRINTS {
             println!(
@@ -125,6 +125,9 @@ impl GetInstructions for Expr {
 
             bvm.pretty_print_instructions();
         }
+
+        // Add an Halt instruction at the end
+        expr_instrs.push(halt().comment("End of the expression"));
         
         Ok(expr_instrs)
     }
@@ -135,7 +138,7 @@ impl GetInstructions for Block {
         let mut bvm = BVM::new();
 
         let expected_size = bvm.get_block_len(self.clone());
-        let block_instrs = bvm.process_block(self.clone());
+        let mut block_instrs = bvm.process_block(self.clone());
 
         if DEBUG_PRINTS {
             println!(
@@ -148,6 +151,9 @@ impl GetInstructions for Block {
 
             bvm.pretty_print_instructions();
         }
+
+        // Add an Halt instruction at the end
+        block_instrs.push(halt().comment("End of the block"));
 
         Ok(block_instrs)
     }
@@ -171,6 +177,8 @@ impl GetInstructions for Prog {
 
             bvm.pretty_print_instructions();
         }
+
+        // Halt instruction is automatically added at the end of the main function
 
         Ok(prog_intrs)
     }
@@ -1392,6 +1400,9 @@ impl BVM {
         // Then, add the call to the main function
         let mut call_instrs = self.process_func_call("main".to_string(), Arguments::new(vec![]));
         final_instrs.append(&mut call_instrs);
+
+        // Add an halt instruction at the end to stop when Main is finished
+        final_instrs.push(halt().comment("End of the program"));
 
         final_instrs
     }
