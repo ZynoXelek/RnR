@@ -46,25 +46,25 @@ impl fmt::Display for FilePath {
 #[derive(Parser, Debug)]
 #[command(author, version, about, long_about = None)]
 struct Args {
-    #[arg(short = 'i', long = "input")] // Default values but can be changed this way
+    #[arg(short = 'i', long = "input", value_name = "PATH", help = "Path to the input file")]
     input: Option<FilePath>,
 
-    #[arg(short = 'a', long = "ast")]
+    #[arg(short = 'a', long = "ast", value_name = "PATH", help = "Path to the AST output file")]
     ast: Option<FilePath>,
 
-    #[arg(short = 't', long = "type_check")]
+    #[arg(short = 't', long = "type_check", help = "Type check the input program")]
     type_check: bool,
 
-    #[arg(short = 'v', long = "virtual_machine", alias = "vm")]
+    #[arg(short = 'v', long = "virtual_machine", alias = "vm", help = "Run the program in the RnR virtual machine")]
     virtual_machine: bool,
 
-    #[arg(short = 'c', long = "code_gen")]
+    #[arg(short = 'c', long = "code_gen", help = "Generate the backend ASM code")]
     code_gen: bool,
 
-    #[arg(long = "asm")] // No short since it would be ambiguous with the `--ast` flag
+    #[arg(long = "asm", value_name = "PATH", help = "Path to the ASM output file")] // No short since it would be ambiguous with the `--ast` flag
     asm: Option<FilePath>,
 
-    #[arg(short = 'r', long = "run")]
+    #[arg(short = 'r', long = "run", help = "Run the generated ASM code using the Mips VM")]
     run: bool,
 }
 
