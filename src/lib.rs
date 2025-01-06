@@ -21,6 +21,7 @@ pub mod type_check;
 pub mod vm;
 
 pub mod backend;
+pub mod asm_parse;
 
 // intrinsics
 pub mod intrinsics;

@@ -6,6 +6,7 @@ use std::{fmt, fs, io, str::FromStr};
 use rnr::{
     ast::Prog,
     backend::get_formatted_instrs,
+    asm_parse::parse_instrs,
     common::{parse, Eval, EvalType, GetInstructions},
     error::{EvalError, TypeError, Error},
     type_check::TypeVal,
@@ -66,6 +67,9 @@ struct Args {
 
     #[arg(short = 'r', long = "run", help = "Run the generated ASM code using the Mips VM")]
     run: bool,
+
+    #[arg(long = "asm_input", alias = "asmi", value_name = "PATH", help = "Path to the asm input file to run the backend from")]
+    asm_input: Option<FilePath>,
 }
 
 impl Args {
@@ -233,7 +237,33 @@ fn run_subcommand(mips: &mut Mips) -> Result<(), MipsError> {
     }
 }
 
-//TODO: More? Running code gen from an ASM file for instance? (Need parsing for ASM)
+//* Load ASM from file: '--asm_input <path>' or '--asmi <path>'
+
+fn load_asm_from_file(path: &str) -> Result<Instrs, Error> {
+    // Reading an ASM program from a file
+    
+    let file = fs::read_to_string(path);
+    match file {
+        Ok(content) => {
+            let instrs = parse_instrs(&content);
+
+            match instrs {
+                Ok(instrs) => {
+                    println!(" * ASM loading: {}success!{}", GREEN_COLOR, DEFAULT_COLOR);
+                    Ok(instrs)
+                }
+                Err(e) => {
+                    eprintln!(" * ASM loading: {}parsing error {}{}", RED_COLOR, e, DEFAULT_COLOR);
+                    Err(e)
+                }
+            }
+        }
+        Err(e) => {
+            eprintln!(" * ASM loading: {}error reading file {}{}", RED_COLOR, e, DEFAULT_COLOR);
+            Err(e.to_string())
+        }
+    }
+}
 
 //?#####################################################
 //?#                      MAIN                         #
@@ -241,70 +271,115 @@ fn run_subcommand(mips: &mut Mips) -> Result<(), MipsError> {
 
 fn main() {
     let args = Args::parse();
-    println!("Parsed args: {:?}", args);
+    //? Debug
+    // eprintln!("Parsed args: {:?}", args);
 
-    let prog = parse_prog_from_file(args.get_file_path()).unwrap();
-    println!("Parsed program:\n{}", prog);
+    //* If an asm path is provided, we do not need to check a program.
+    //* --asm_input is only compatible with the --run flag, not with any other flag.
 
-    // Process subcommands in order:
-    // 1. AST
-    if let Some(ast_path) = &args.ast {
-        println!("\n ----------------- ");
-        ast_subcommand(prog.clone(), ast_path.path.as_str()).unwrap();
-    }
+    if let Some(asm_input) = &args.asm_input {
 
-    // 2. Type check
-    if args.type_check {
-        println!("\n ----------------- ");
-        type_check_subcommand(prog.clone()).unwrap();
-    }
-
-    // 3. Virtual machine
-    if args.virtual_machine {
-        println!("\n ----------------- ");
-        vm_subcommand(prog.clone()).unwrap();
-    }
-
-    //? Print a warning if an option that requires a missing previous step is used
-    if args.asm.is_some() && !args.code_gen {
-        eprintln!(
-            "{}Warning: ASM output requested (--asm) without code generation (-c). Ignoring ASM output.{}",
-            YELLOW_COLOR, DEFAULT_COLOR
-        );
-    }
-
-    if args.run && !args.code_gen {
-        eprintln!(
-            "{}Warning: Run requested (-r) without code generation (-c). Ignoring run.{}",
-            YELLOW_COLOR, DEFAULT_COLOR
-        );
-    }
-
-    // 4. Code generation
-    if args.code_gen {
-        println!("\n ----------------- ");
-        let instrs = code_gen_subcommand(prog.clone());
-        if instrs.is_err() {
+        if args.input.is_some() || args.ast.is_some() || args.type_check || args.virtual_machine || args.code_gen || args.asm.is_some() {
             eprintln!(
-                "{}Error: Code generation failed. Skipping ASM and run steps.{}",
-                RED_COLOR, DEFAULT_COLOR
+                "{}Warning: ASM input provided (--asm_input) but other flags are set (the only one compatible is --run). Ignoring other flags.{}",
+                YELLOW_COLOR, DEFAULT_COLOR
             );
-            return;
-        }
-        let instrs = instrs.unwrap();
-        println!("Generated code:\n{}", get_formatted_instrs(instrs.clone()));
-
-        // 5. ASM
-        if let Some(asm_path) = &args.asm {
-            println!("\n ----------------- ");
-            _ = asm_subcommand(instrs.clone(), asm_path.path.as_str());
         }
 
-        // 6. Run
+        let instrs = load_asm_from_file(asm_input.path.as_str()).unwrap();
+
+        println!("Loaded ASM code:\n{}", get_formatted_instrs(instrs.clone()));
+
         if args.run {
             println!("\n ----------------- ");
             let mut mips = Mips::new(instrs);
             _ = run_subcommand(&mut mips);
+        }
+        return;
+    } else {
+        let prog = parse_prog_from_file(args.get_file_path()).unwrap();
+        println!("Parsed program:\n{}", prog);
+
+        // Process subcommands in order:
+        // 1. AST
+        if let Some(ast_path) = &args.ast {
+            println!("\n ----------------- ");
+            ast_subcommand(prog.clone(), ast_path.path.as_str()).unwrap();
+        }
+
+        //? Print a warning if an option that requires a missing previous step is used
+        //? To be able to run the virtual machine, or the code generation, we must have type checked the program first
+        if args.virtual_machine && !args.type_check {
+            eprintln!(
+                "{}Warning: VM requested (-v) without type checking (-t). Ignoring VM.{}",
+                YELLOW_COLOR, DEFAULT_COLOR
+            );
+        }
+
+        if args.code_gen && !args.type_check {
+            eprintln!(
+                "{}Warning: Code generation requested (-c) without type checking (-t). Ignoring code generation.{}",
+                YELLOW_COLOR, DEFAULT_COLOR
+            );
+        }
+
+        // 2. Type check
+        if args.type_check {
+            println!("\n ----------------- ");
+            //TODO: Make type check step generate a simplified AST to be used by the VM and code gen steps
+            // In particular, we need to modify each none typed var to have a type so that the code gen can work properly
+            type_check_subcommand(prog.clone()).unwrap();
+
+            // 3. Virtual machine
+            if args.virtual_machine {
+                println!("\n ----------------- ");
+                vm_subcommand(prog.clone()).unwrap();
+            }
+
+            //? Print a warning if an option that requires a missing previous step is used
+            if args.asm.is_some() && !args.code_gen {
+                eprintln!(
+                    "{}Warning: ASM output requested (--asm) without code generation (-c). Ignoring ASM output.{}",
+                    YELLOW_COLOR, DEFAULT_COLOR
+                );
+            }
+
+            if args.run && !args.code_gen {
+                eprintln!(
+                    "{}Warning: Run requested (-r) without code generation (-c). Ignoring run.{}",
+                    YELLOW_COLOR, DEFAULT_COLOR
+                );
+            }
+
+            // 4. Code generation
+            if args.code_gen {
+                println!("\n ----------------- ");
+                let instrs = code_gen_subcommand(prog.clone());
+                if instrs.is_err() {
+                    eprintln!(
+                        "{}Error: Code generation failed. Skipping ASM and run steps.{}",
+                        RED_COLOR, DEFAULT_COLOR
+                    );
+                    return;
+                }
+                let instrs = instrs.unwrap();
+                println!("Generated code:\n{}", get_formatted_instrs(instrs.clone()));
+
+                // 5. ASM
+                if let Some(asm_path) = &args.asm {
+                    println!("\n ----------------- ");
+                    _ = asm_subcommand(instrs.clone(), asm_path.path.as_str());
+                }
+
+                // 6. Run
+                if args.run {
+                    println!("\n ----------------- ");
+                    let mut mips = Mips::new(instrs);
+                    _ = run_subcommand(&mut mips);
+                }
+            }
+
+            return;
         }
     }
 }

@@ -84,11 +84,14 @@
 - Write a first iteration of the `type_rules.md`.
 - Fix backend run issue by adding an `Halt` instruction at the end of the main call of a program. Issue was that the VM tried to read another instruction while there were no instructions left.
 
+## 2025-01-06
+
+- Implement ASM parsing and the possibility to load an ASM program and run it through `--asm_input <path>`.
+
 ## TODO
 
 **Mandatory:**
 
-- Fix backend run
 - CLI improve help and add one for each command
 - Improve custom errors
 - Improve arrays in EBNF
@@ -100,16 +103,17 @@
 
 Primary:
 
+- AST optimizations to have a simpler backend
 - Backend optimizations
 - Backend support for functions with any number of arguments (refactor the frame stack to remove arg1, arg2, arg3 and use the intermediate scopes as I already do)
 - Implement arrays in backend
 - Implement references everywhere
 - Implement ownership?
 - Implement custom struct?
+- Add support for CONSTANT expression in array size, and any non unit type expression in the init value during array definition. It should support any valid type expression.
 
 Secondary:
 
-- Add support for CONSTANT expression in array size, and any non unit type expression in the init value during array definition.
 - May want to add usize type for indexing (would be useful for ranges as well). May need to add "as" keyword then to convert i32 to usize.
 - Add return statement to be able to return from a while.
 - Similarly, add break statement.
