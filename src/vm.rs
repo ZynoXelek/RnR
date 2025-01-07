@@ -692,7 +692,7 @@ impl VM {
                     if index == size - 1 && !block.semi {
                         // last statement
                         result = self.eval_stmt(stmt)?; // Should always be an expression or assignment evaluation
-                                                        // (Will be checked by the type checker if I am correct)
+                                                        // (Is checked by the type checker)
                     } else {
                         self.eval_stmt(stmt)?;
                     }

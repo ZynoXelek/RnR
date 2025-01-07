@@ -98,6 +98,7 @@
 - Write SOS file
 - Write type rules
 - Write REFLECTION.md (including some additional feedback on how it went, when it was hard and everything... + What we have learnt)
+- UPDATE README
 
 **Optional:**
 

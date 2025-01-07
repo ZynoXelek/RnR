@@ -218,6 +218,20 @@ mod test_parse_lit {
         );
     }
 
+    //TODO: Do not support expressions in array initialization yet
+    #[test]
+    #[ignore = "Not supported yet - expressions in array initialization"]
+    fn parse_expr_in_array() {
+        let lit: Literal = parse("[1, 1 + 5, 3]");
+        assert_eq!(
+            lit,
+            Literal::Array(
+                vec![Literal::Int(1), Literal::Int(6), Literal::Int(3)],
+                3
+            )
+        );
+    }
+
     #[test]
     fn parse_lit_fail() {
         assert_parse_fail::<Literal>("a");
@@ -1371,6 +1385,24 @@ mod test_parse_prog {
             let c : i32 = 1;
             let mut d : i32 = 2;
             d = a(c + b());
+            println!(\"{}\", d);
+        }
+        "
+        .parse()
+        .unwrap();
+        let pr: Result<Prog> = syn::parse2(ts);
+        let prog = pr.unwrap();
+        println!("prog: {:?}", prog);
+        println!("prog (pretty printing)\n{}", prog);
+    }
+
+    #[test]
+    fn test_prog_array() {
+        let ts: proc_macro2::TokenStream = "
+        fn main() {
+            let c : [i32; 3] = [1, 2, 3];
+            let mut d : i32 = 2;
+            d = d + c[0] + c[1] + c[2]; // 8
             println!(\"{}\", d);
         }
         "

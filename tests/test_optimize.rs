@@ -1,4 +1,3 @@
-use rnr::optimize::*;
 use rnr::ast::{Block, Expr, Literal, Prog};
 use rnr::common::Optimize;
 
@@ -33,7 +32,7 @@ pub mod test_optimize {
         let res = expr.optimize();
         assert_eq!(res, Ok(expected));
     }
-    
+
     //? Testing simple unops
 
     #[test]
@@ -108,7 +107,7 @@ pub mod test_optimize {
         let expected: Expr = parse("-a");
         assert_eq!(res, Ok(expected));
     }
-    
+
     //? Testing simple binops
 
     #[test]
@@ -145,7 +144,7 @@ pub mod test_optimize {
 
     //TODO: Add support for this kind of optimization
     #[test]
-    #[ignore = "Not implemented yet"]
+    #[ignore = "Not implemented yet (optimization of binops with literals)"]
     fn test_add_opti_with_literals_2() {
         let expr: Expr = parse("3 + a + 5 + 6");
         let res = expr.optimize();
@@ -266,6 +265,90 @@ pub mod test_optimize {
         let expr: Expr = parse("3 + 2 < a");
         let res = expr.optimize();
         let expected: Expr = parse("5 < a");
+        assert_eq!(res, Ok(expected));
+    }
+
+    // arrays get
+
+    #[test]
+    fn test_array_get_opti_1() {
+        let expr: Expr = parse("[1, 2, 3][1]");
+        let res = expr.optimize();
+        let expected: Expr = parse("2");
+        assert_eq!(res, Ok(expected));
+    }
+
+    #[test]
+    fn test_array_get_opti_2() {
+        let expr: Expr = parse("[1, 2, 3][0]");
+        let res = expr.optimize();
+        let expected: Expr = parse("1");
+        assert_eq!(res, Ok(expected));
+    }
+
+    #[test]
+    fn test_array_get_opti_3() {
+        let expr: Expr = parse("[1, 2, 3][2]");
+        let res = expr.optimize();
+        let expected: Expr = parse("3");
+        assert_eq!(res, Ok(expected));
+    }
+
+    #[test]
+    fn test_array_get_opti_4() {
+        let expr: Expr = parse("a[3]");
+        let res = expr.optimize();
+        let expected: Expr = parse("a[3]");
+        assert_eq!(res, Ok(expected));
+    }
+
+    #[test]
+    fn test_array_get_with_expr_1() {
+        let expr: Expr = parse("[1, 2, 3][1 + 1]");
+        let res = expr.optimize();
+        let expected: Expr = parse("3");
+        assert_eq!(res, Ok(expected));
+    }
+
+    #[test]
+    fn test_array_get_with_expr_2() {
+        let expr: Expr = parse("[1, 2, 3][1 + a]");
+        let res = expr.optimize();
+        let expected: Expr = parse("[1, 2, 3][1 + a]");
+        assert_eq!(res, Ok(expected));
+    }
+
+    #[test]
+    #[ignore = "Not implemented yet (can't parse expr in arrays)"]
+    fn test_array_get_with_expr_3() {
+        let expr: Expr = parse("[1, 2 * 5 + 7, 3][1]");
+        let res = expr.optimize();
+        let expected: Expr = parse("17");
+        assert_eq!(res, Ok(expected));
+    }
+
+    #[test]
+    #[ignore = "Not implemented yet (can't parse expr in arrays)"]
+    fn test_array_get_with_expr_4() {
+        let expr: Expr = parse("[a, b, c][0]");
+        let res = expr.optimize();
+        let expected: Expr = parse("a");
+        assert_eq!(res, Ok(expected));
+    }
+
+    #[test]
+    fn test_array_of_arrays_get_1() {
+        let expr: Expr = parse("[[1, 2], [3, 4]][1]");
+        let res = expr.optimize();
+        let expected: Expr = parse("[3, 4]");
+        assert_eq!(res, Ok(expected));
+    }
+
+    #[test]
+    fn test_array_of_arrays_get_2() {
+        let expr: Expr = parse("[[1, 2], [3, 4]][1][0]");
+        let res = expr.optimize();
+        let expected: Expr = parse("3");
         assert_eq!(res, Ok(expected));
     }
 
@@ -410,6 +493,129 @@ pub mod test_optimize {
         let expr: Expr = parse("if true && a { 3 } else { 4 }");
         let res = expr.optimize();
         let expected: Expr = parse("if a { 3 } else { 4 }");
+        assert_eq!(res, Ok(expected));
+    }
+
+    //? Optimizing blocks
+    
+    #[test]
+    fn test_block_opti_1() {
+        let block: Block = parse(
+            "
+            {
+                let a = 3;
+                1 + 3; // Should be optimized out
+                f(2); // Should be optimized out
+                a
+            }
+            "
+        );
+        let res = block.optimize();
+        let expected: Block = parse(
+            "
+            {
+                let a = 3;
+                a
+            }
+            "
+        );
+        assert_eq!(res, Ok(expected));
+    }
+
+    #[test]
+    fn test_larger_block_opti_1() {
+        let block: Block = parse(
+            "
+            {
+                fn f(a: i32, b: i32) -> i32 {
+                    a + b
+                }
+
+                fn g(a: bool) -> bool { // Not used, should be optimized out
+                    !a
+                }
+
+                let a = 3;
+                let b = f(2 + a * a, 3);
+                let c = b - 2 * a + f(a * b, -4); // Not used, should be optimized out
+                a + b
+            }
+            "
+        );
+        let res = block.optimize();
+        let expected: Block = parse(
+            "
+            {
+                fn f(a: i32, b: i32) -> i32 {
+                    a + b
+                }
+
+                let a = 3;
+                let b = f(2 + a * a, 3);
+                a + b
+            }
+            "
+        );
+        assert_eq!(res, Ok(expected));
+    }
+
+    //? Optimizing programs
+
+    #[test]
+    #[ignore = "Not implemented yet"]
+    fn test_prog_opti_1() {
+        let prog: Prog = parse(
+            "
+            fn main() {
+                let a = 1; // Should be optimized out because it is never used
+                let a = 3;
+                let b;
+                1 + 3; // Should be optimized out
+                f(2); // Should be optimized out
+                b = a + 4;
+            }
+            "
+        );
+        let res = prog.optimize();
+        let expected: Prog = parse(
+            "
+            fn main() {
+                let a = 3;
+                let b;
+                b = a + 4;
+            }
+            "
+        );
+        assert_eq!(res, Ok(expected));
+    }
+
+    #[test]
+    #[ignore = "Not implemented yet"]
+    fn test_prog_opti_2() {
+        let prog: Prog = parse(
+            "
+            fn main() {
+                let a = if false {
+                    3
+                } else {
+                    4
+                };
+                let b = {
+                    1 + a; // Should be optimized out
+                    a + 3
+                };
+            }
+            "
+        );
+        let res = prog.optimize();
+        let expected: Prog = parse(
+            "
+            fn main() {
+                let a = 4;
+                let b = a + 3;
+            }
+            "
+        );
         assert_eq!(res, Ok(expected));
     }
 }

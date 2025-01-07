@@ -471,6 +471,10 @@ impl fmt::Display for Mutable {
 //?#################################################################################################
 
 impl Statement {
+    pub fn get_empty_statement() -> Statement {
+        Statement::Expr(Expr::Lit(Literal::Unit))
+    }
+
     // This function is used to check if a statement requires a semi colon at the end of its line or not
     // If the statement is the last one of a block, it ignores this function and uses the next one
     pub fn requires_semi_colon(&self) -> bool {

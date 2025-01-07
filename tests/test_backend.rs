@@ -435,8 +435,6 @@ mod test_bvm {
         assert_eq!(mips.rf.get(t0), 1);
     }
 
-    //TODO: Add Get test for arrays
-
     //? Statements -----------------------------------------
     // as simple blocks
 
@@ -1241,5 +1239,88 @@ mod test_bvm {
 
         // Check the result of the mips
         assert_eq!(mips.rf.get(t0), 1);
+    }
+
+
+    //? Additional: Arrays
+
+    #[test]
+    fn test_simple_array_literal_1() {
+        // Get the resulting mips
+        let mips = parse_mips::<Expr>("[1, 2, 3]").unwrap();
+
+        // Check the result of the mips
+        assert_eq!(mips.rf.get(t0), 3);
+    }
+
+    #[test]
+    fn test_simple_array_literal_2() {
+        // Get the resulting mips
+        let mips = parse_mips::<Expr>("[1, 2]").unwrap();
+
+        // Check the result of the mips
+        assert_eq!(mips.rf.get(t0), 2);
+    }
+
+    #[test]
+    fn test_simple_get_1() {
+        // Get the resulting mips
+        let mips = parse_mips::<Expr>("[1, 2, 3][0]").unwrap();
+
+        // Check the result of the mips
+        assert_eq!(mips.rf.get(t0), 1);
+    }
+
+    #[test]
+    fn test_simple_get_2() {
+        // Get the resulting mips
+        let mips = parse_mips::<Expr>("[1, 2, 3][1]").unwrap();
+
+        // Check the result of the mips
+        assert_eq!(mips.rf.get(t0), 2);
+    }
+
+    #[test]
+    fn test_simple_get_3() {
+        // Get the resulting mips
+        let mips = parse_mips::<Expr>("[1, 2, 3][2]").unwrap();
+
+        // Check the result of the mips
+        assert_eq!(mips.rf.get(t0), 3);
+    }
+
+    #[test]
+    fn test_let_array() {
+        // Get the resulting mips
+        let mips = parse_mips::<Block>(
+            "
+        {
+            let a = [1, 2, 3];
+            a[1]
+        }
+        ",
+        )
+        .unwrap();
+
+        // Check the result of the mips
+        assert_eq!(mips.rf.get(t0), 2);
+    }
+
+    #[test]
+    fn test_mut_let_array() {
+        // Get the resulting mips
+        let mips = parse_mips::<Block>(
+            "
+        {
+            let mut a = [1, 2, 3];
+            a[1] = 5;
+            a[1] + a[0] // 6
+        }
+        ",
+        )
+        .unwrap();
+
+        // Check the result of the mips
+        assert_eq!(mips.rf.get(t0), 6);
     }
 }

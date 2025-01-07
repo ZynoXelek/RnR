@@ -1007,8 +1007,7 @@ impl TVM {
                 _ => {
                     if index == size - 1 && !block.semi {
                         // last statement
-                        result_type = self.eval_type_stmt(stmt)?; // Should always be an expression or assignment evaluation
-                                                                  // (Will be checked by the type checker if I am correct)
+                        result_type = self.eval_type_stmt(stmt)?;
                     } else {
                         self.eval_type_stmt(stmt)?;
                     }
