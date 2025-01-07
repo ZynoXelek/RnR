@@ -18,6 +18,8 @@ pub mod parse;
 
 pub mod type_check;
 
+pub mod optimize;
+
 pub mod vm;
 
 pub mod backend;

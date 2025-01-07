@@ -1,6 +1,6 @@
 use mips::{instrs::Instrs, vm::Mips};
 
-use crate::error::{TypeError, EvalError, Error};
+use crate::error::{Error, EvalError, TypeError};
 
 pub trait EvalType<T: Clone> {
     fn eval_type(&self) -> Result<T, TypeError>
@@ -10,6 +10,12 @@ pub trait EvalType<T: Clone> {
 
 pub trait Eval<T: Clone> {
     fn eval(&self) -> Result<T, EvalError>
+    where
+        T: Clone;
+}
+
+pub trait Optimize<T: Clone> {
+    fn optimize(&self) -> Result<T, Error> //TODO: Use custom error
     where
         T: Clone;
 }
@@ -26,12 +32,33 @@ pub fn parse<T1>(s: &str) -> T1
 where
     T1: syn::parse::Parse + std::fmt::Display,
 {
-    let ts: proc_macro2::TokenStream = s.parse().unwrap();
-    let r: T1 = syn::parse2(ts).unwrap();
-    println!(" --- Parsing --- ");
-    println!("{}", r);
-    println!(" --- End Parsing --- ");
-    r
+    let ts_result = s.parse::<proc_macro2::TokenStream>();
+    let ts: proc_macro2::TokenStream;
+    match ts_result {
+        Ok(t) => ts = t,
+        Err(e) => {
+            println!("Error in token stream parsing: {}", e);
+            panic!("Error parsing the input token stream");
+        }
+    }
+
+    //? Debug
+    // eprintln!("Token stream is:\n{}", ts);
+
+    let res = syn::parse2::<T1>(ts);
+    match res {
+        Ok(r) => {
+            println!(" --- Parsing --- ");
+            println!("{}", r);
+            println!(" --- End Parsing --- ");
+            r
+        }
+        Err(e) => {
+            let typename = std::any::type_name::<T1>();
+            println!("Error in type '{}' parsing: {}", typename, e);
+            panic!("Error parsing from token stream to type '{}'", typename);
+        }
+    }
 }
 
 pub fn parse_type<T1, T2>(s: &str) -> Result<T2, TypeError>
