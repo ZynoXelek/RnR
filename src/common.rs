@@ -48,9 +48,10 @@ where
     let res = syn::parse2::<T1>(ts);
     match res {
         Ok(r) => {
-            println!(" --- Parsing --- ");
-            println!("{}", r);
-            println!(" --- End Parsing --- ");
+            //? To avoid spamming the terminal during tests and final run through main
+            // println!(" --- Parsing --- ");
+            // println!("{}", r);
+            // println!(" --- End Parsing --- ");
             r
         }
         Err(e) => {

@@ -1,5 +1,6 @@
+use std::fmt::{Debug, Display};
 use crate::ast::{Block, Literal, Type};
-use crate::common::Eval;
+use crate::common::{Eval, Optimize};
 use crate::parse::{parse, try_parse};
 use crate::vm::Val;
 use syn::parse::Parse;
@@ -70,6 +71,19 @@ where
     assert!(ty.is_ok());
     let ty = ty.unwrap();
     assert_eq!(ty, expected.into());
+}
+
+// Assert that the optimization result is the expected expression, block or program.
+pub fn assert_optimize<T1>(p: &T1, expected: T1)
+where
+    T1: Clone + Optimize<T1> + PartialEq + Debug + Display,
+{
+    let input_opti = p.optimize();
+    assert!(input_opti.is_ok());
+    let input_opti = input_opti.unwrap();
+    println!("Optimization result for input:\n{}", input_opti);
+    println!("Expected optimization result:\n{}", expected);
+    assert_eq!(input_opti, expected);
 }
 
 /// Assert that `p` evaluates to the expected value **and** that the type returned by the type

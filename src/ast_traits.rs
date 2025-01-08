@@ -260,6 +260,15 @@ impl fmt::Display for Literal {
 //?#################################################################################################
 
 impl Expr {
+    pub fn get_empty_expr() -> Expr {
+        Expr::Lit(Literal::Unit)
+    }
+
+    pub fn is_empty_expr(&self) -> bool {
+        let empty = Expr::get_empty_expr();
+        self == &empty
+    }
+
     pub fn bin_op(o: BinOp, left: Expr, right: Expr) -> Self {
         Expr::BinOp(o, Box::new(left), Box::new(right))
     }
@@ -472,7 +481,12 @@ impl fmt::Display for Mutable {
 
 impl Statement {
     pub fn get_empty_statement() -> Statement {
-        Statement::Expr(Expr::Lit(Literal::Unit))
+        Statement::Expr(Expr::get_empty_expr())
+    }
+
+    pub fn is_empty_statement(&self) -> bool {
+        let empty = Statement::get_empty_statement();
+        self == &empty
     }
 
     // This function is used to check if a statement requires a semi colon at the end of its line or not

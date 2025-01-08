@@ -18,8 +18,44 @@ use crate::intrinsics::*;
 pub type Uses = usize;
 
 #[derive(Clone, Debug)]
+pub struct ScopeFn {
+    uses: Uses,
+    fn_decl: FnDeclaration,
+}
+
+impl ScopeFn {
+    pub fn new(uses: Uses, fn_decl: FnDeclaration) -> Self {
+        Self { uses, fn_decl }
+    }
+
+    pub fn get_uses(&self) -> Uses {
+        self.uses
+    }
+
+    pub fn get_fn_decl(&self) -> &FnDeclaration {
+        &self.fn_decl
+    }
+
+    pub fn use_fn(&mut self) {
+        self.uses += 1;
+    }
+
+    pub fn use_fn_multiple(&mut self, uses: Uses) {
+        self.uses += uses;
+    }
+
+    pub fn revert_uses(&mut self, uses: Uses) {
+        if self.uses > uses {
+            self.uses -= uses;
+        } else {
+            self.uses = 0;
+        }
+    }
+}
+
+#[derive(Clone, Debug)]
 pub struct Scope {
-    functions: HashMap<String, Uses>, // Tracks the defined functions and their number of uses
+    functions: HashMap<String, ScopeFn>, // Tracks the defined functions and their number of uses
     vars: HashMap<String, Uses>,      // Tracks the defined variables and their number of uses
 }
 
@@ -41,6 +77,10 @@ impl Scope {
         }
     }
 
+    pub fn remove_var(&mut self, var: String) {
+        self.vars.remove(&var);
+    }
+
     pub fn use_var(&mut self, var: String) {
         if let Some(uses) = self.vars.get_mut(&var) {
             *uses += 1;
@@ -57,30 +97,106 @@ impl Scope {
         }
     }
 
-    //* Functions
-
-    pub fn define_func(&mut self, fn_name: String) {
-        if let Some(uses) = self.functions.get_mut(&fn_name) {
-            unreachable!("Function {} is already defined", fn_name); // Unreachable since the type checker will have already checked it.
+    pub fn use_var_multiple(&mut self, var: String, uses: Uses) {
+        if let Some(uses_var) = self.vars.get_mut(&var) {
+            *uses_var += uses;
         } else {
-            self.functions.insert(fn_name, 0);
+            self.vars.insert(var, uses);
         }
     }
 
-    pub fn use_func(&mut self, fn_name: String) {
-        if let Some(uses) = self.functions.get_mut(&fn_name) {
-            *uses += 1;
+    pub fn revert_var_uses(&mut self, var: String, uses: Uses) {
+        if let Some(uses_var) = self.vars.get_mut(&var) {
+            if *uses_var > uses {
+                *uses_var -= uses; // It is still more than 1
+            } else {
+                // The variable is not used anymore
+                *uses_var = 0;
+                // self.vars.remove(&var);
+            }
         } else {
-            unreachable!("Function {} is not defined", fn_name); // Unreachable since the type checker will have already checked it.
+            unreachable!("Variable {} is not defined -> can't remove uses", var);
+        }
+    }
+
+    //* Functions
+
+    pub fn define_func(&mut self, fn_decl: FnDeclaration) {
+        let fn_name = fn_decl.id.clone();
+        if let Some(uses) = self.functions.get_mut(&fn_name) {
+            unreachable!("Function {} is already defined", fn_name); // Unreachable since the type checker will have already checked it.
+        } else {
+            self.functions.insert(fn_name, ScopeFn::new(0, fn_decl));
+        }
+    }
+
+    pub fn remove_func(&mut self, fn_name: String) {
+        self.functions.remove(&fn_name);
+    }
+
+    pub fn use_func(&mut self, fn_name: String) {
+        if let Some(scope_fn) = self.functions.get_mut(&fn_name) {
+            scope_fn.use_fn();
+        } else {
+            unreachable!("Function {} is not defined", fn_name);
         }
     }
 
     pub fn get_func_uses(&self, fn_name: &str) -> Uses {
-        if let Some(uses) = self.functions.get(fn_name) {
-            *uses
+        if let Some(scope_fn) = self.functions.get(fn_name) {
+            scope_fn.get_uses()
         } else {
-            unreachable!("Function {} is not defined", fn_name); // Unreachable since the type checker will have already checked it.
+            unreachable!("Function {} is not defined", fn_name);
         }
+    }
+
+    pub fn get_func_decl(&self, fn_name: &str) -> &FnDeclaration {
+        if let Some(scope_fn) = self.functions.get(fn_name) {
+            scope_fn.get_fn_decl()
+        } else {
+            unreachable!("Function {} is not defined", fn_name);
+        }
+    }
+
+    pub fn use_func_multiple(&mut self, fn_name: String, uses: Uses) {
+        if let Some(scope_fn) = self.functions.get_mut(&fn_name) {
+            scope_fn.use_fn_multiple(uses);
+        } else {
+            // Only works for already defined functions
+            unreachable!("Function {} is not defined -> can't infer function declaration", fn_name);
+        }
+    }
+
+    pub fn revert_func_uses(&mut self, fn_name: String, uses: Uses) {
+        if let Some(scope_fn) = self.functions.get_mut(&fn_name) {
+            scope_fn.revert_uses(uses);
+        } else {
+            unreachable!("Function {} is not defined -> can't remove uses", fn_name);
+        }
+    }
+
+    pub fn get_unused_vars(&self) -> Vec<String> {
+        let mut unused_vars = vec![];
+
+        for (var, uses) in self.vars.iter() {
+            if *uses == 0 {
+                unused_vars.push(var.clone());
+            }
+        }
+
+        unused_vars
+    }
+
+    pub fn get_unused_funcs(&self) -> Vec<String> {
+        let mut unused_funcs = vec![];
+
+        for (fn_name, scope_fn) in self.functions.iter() {
+            if scope_fn.get_uses() == 0 {
+                unused_funcs.push(fn_name.clone());
+            }
+        }
+
+        unused_funcs
     }
 }
 
@@ -94,8 +210,8 @@ impl fmt::Display for Scope {
         }
 
         s.push_str("Defined Functions and their uses:\n");
-        for (fn_name, uses) in self.functions.iter() {
-            s.push_str(&format!("|\t{}: {}\n", fn_name, uses));
+        for (fn_name, scope_fn) in self.functions.iter() {
+            s.push_str(&format!("|\t{}: {}\n", fn_name, scope_fn.get_uses()));
         }
 
         write!(f, "{}", s)
@@ -138,36 +254,84 @@ impl Optimize<Prog> for Prog {
     }
 }
 
+
+// Define a private type for the return value of the update_used_vars_and_funcs function
+#[derive(Clone, Debug, PartialEq)]
+struct UsedVarsFuncs {
+    vars: HashMap<String, Uses>, // The list of the names of each variable used in the statement (used means read, not written)
+    funcs: HashMap<String, Uses>, // The list of the names of each function called in the statement
+    modify_outer_scope: bool, // Whether the statement modifies a variable from an outer scope
+    define_var: Option<String>, // The name of the variable defined in the statement if there is one
+    define_func: Option<String>, // The name of the function defined in the statement if there is one
+}
+
+impl UsedVarsFuncs {
+    fn new() -> Self {
+        Self {
+            vars: HashMap::new(),
+            funcs: HashMap::new(),
+            modify_outer_scope: false,
+            define_var: None,
+            define_func: None,
+        }
+    }
+
+    fn add_var_use(&mut self, var: String) {
+        if let Some(uses) = self.vars.get_mut(&var) {
+            *uses += 1;
+        } else {
+            self.vars.insert(var, 1);
+        }
+    }
+
+    fn add_func_use(&mut self, func: String) {
+        if let Some(uses) = self.funcs.get_mut(&func) {
+            *uses += 1;
+        } else {
+            self.funcs.insert(func, 1);
+        }
+    }
+
+    fn concatenates(&mut self, other: UsedVarsFuncs) {
+        for (var, uses) in other.vars.iter() {
+            if let Some(uses_self) = self.vars.get_mut(var) {
+                *uses_self += uses;
+            } else {
+                self.vars.insert(var.clone(), *uses);
+            }
+        }
+
+        for (func, uses) in other.funcs.iter() {
+            if let Some(uses_self) = self.funcs.get_mut(func) {
+                *uses_self += uses;
+            } else {
+                self.funcs.insert(func.clone(), *uses);
+            }
+        }
+        self.modify_outer_scope = self.modify_outer_scope || other.modify_outer_scope;
+
+        // Define var can only be set by statements, not expressions.
+        // Therefore, when we concatenate UsedVarsFuncs, we can never have two define_var set since
+        // a concatenation only happens when we build the object for an expression
+        // Both of them should therefore be None at this point.
+        // Just in case, we keep the first not None value if there is one.
+        // Same for functions
+        if self.define_var.is_none() {
+            self.define_var = other.define_var;
+        }
+        if self.define_func.is_none() {
+            self.define_func = other.define_func;
+        }
+    }
+}
+
+#[derive(Clone, Debug)]
 pub struct Optimizer {
     // The optimizer will generate an optimized version of the AST by erasing useless parts of code,
     // and simplifying expressions
 
     // The optimizer keeps tracks of the scopes to determine whether a function/var is used at some point.
     scopes: Vec<Scope>,
-}
-
-
-// Define a private type for the return value of the update_used_vars_and_funcs function
-struct UsedVarsFuncs {
-    vars: Vec<String>, // The list of the names of each variable used in the statement (used means read, not written)
-    funcs: Vec<String>, // The list of the names of each function called in the statement
-    modify_outer_scope: bool, // Whether the statement modifies a variable from an outer scope
-}
-
-impl UsedVarsFuncs {
-    fn new() -> Self {
-        Self {
-            vars: vec![],
-            funcs: vec![],
-            modify_outer_scope: false,
-        }
-    }
-
-    fn concatenates(&mut self, other: UsedVarsFuncs) {
-        self.vars.extend(other.vars);
-        self.funcs.extend(other.funcs);
-        self.modify_outer_scope = self.modify_outer_scope || other.modify_outer_scope;
-    }
 }
 
 impl Optimizer {
@@ -184,13 +348,10 @@ impl Optimizer {
     }
     
     fn remove_scope(&mut self) {
-        //TODO: Add check to remove any useless variables/functions
         self.scopes.pop();
     }
 
     fn define_var(&mut self, var: String) {
-        //TODO: Add check to remove a same var that would not be used
-
         if let Some(scope) = self.scopes.last_mut() {
             scope.define_var(var);
         } else {
@@ -200,8 +361,8 @@ impl Optimizer {
 
     fn get_var_uses(&self, var: &str) -> Option<Uses> {
         for scope in self.scopes.iter().rev() {
-            if let Some(uses) = scope.vars.get(var) {
-                return Some(*uses);
+            if let Some(_) = scope.vars.get(var) {
+                return Some(scope.get_var_uses(var));
             }
         }
 
@@ -233,18 +394,56 @@ impl Optimizer {
         unreachable!("Trying to use an undefined variable: {}", var); // Unreachable since the type checker will have already checked it.
     }
 
-    fn define_func(&mut self, fn_name: String) {
+    fn use_var_multiple(&mut self, var: String, uses: Uses) {
+        // We look through the scopes in a reverse order to find the first definition of the variable.
+        // We then increase the number of uses of this variable.
+
+        for scope in self.scopes.iter_mut().rev() {
+            if scope.vars.contains_key(&var) {
+                scope.use_var_multiple(var, uses);
+                return;
+            }
+        }
+
+        unreachable!("Trying to use an undefined variable: {}", var); // Unreachable since the type checker will have already checked it.
+    }
+
+    fn revert_var_uses(&mut self, var: String, uses: Uses) {
+        // We look through the scopes in a reverse order to find the first definition of the variable.
+        // We then decrease the number of uses of this variable.
+
+        for scope in self.scopes.iter_mut().rev() {
+            if scope.vars.contains_key(&var) {
+                scope.revert_var_uses(var, uses);
+                return;
+            }
+        }
+
+        unreachable!("Trying to revert uses of an undefined variable: {}", var); // Unreachable since the type checker will have already checked it.
+    }
+
+    fn define_func(&mut self, fn_decl: FnDeclaration) {
         if let Some(scope) = self.scopes.last_mut() {
-            scope.define_func(fn_name);
+            scope.define_func(fn_decl);
         } else {
-            unreachable!("No scope to define function {}", fn_name); // Unreachable since the type checker will have already checked it.
+            unreachable!("No scope to define function {}", fn_decl.id); // Unreachable since the type checker will have already checked it.
         }
     }
 
     fn get_func_uses(&self, fn_name: &str) -> Option<Uses> {
         for scope in self.scopes.iter().rev() {
-            if let Some(uses) = scope.functions.get(fn_name) {
-                return Some(*uses);
+            if let Some(_) = scope.functions.get(fn_name) {
+                return Some(scope.get_func_uses(fn_name));
+            }
+        }
+
+        None // Not defined
+    }
+
+    fn get_func_decl(&self, fn_name: &str) -> Option<&FnDeclaration> {
+        for scope in self.scopes.iter().rev() {
+            if let Some(_) = scope.functions.get(fn_name) {
+                return Some(scope.get_func_decl(fn_name));
             }
         }
 
@@ -263,6 +462,54 @@ impl Optimizer {
         }
 
         unreachable!("Trying to use an undefined function: {}", fn_name); // Unreachable since the type checker will have already checked it.
+    }
+
+    fn use_func_multiple(&mut self, fn_name: String, uses: Uses) {
+        // We look through the scopes in a reverse order to find the first definition of the function.
+        // We then increase the number of uses of this function.
+
+        for scope in self.scopes.iter_mut().rev() {
+            if scope.functions.contains_key(&fn_name) {
+                scope.use_func_multiple(fn_name, uses);
+                return;
+            }
+        }
+
+        unreachable!("Trying to use an undefined function: {}", fn_name); // Unreachable since the type checker will have already checked it.
+    }
+
+    fn revert_func_uses(&mut self, fn_name: String, uses: Uses) {
+        // We look through the scopes in a reverse order to find the first definition of the function.
+        // We then decrease the number of uses of this function.
+
+        for scope in self.scopes.iter_mut().rev() {
+            if scope.functions.contains_key(&fn_name) {
+                scope.revert_func_uses(fn_name, uses);
+                return;
+            }
+        }
+
+        unreachable!("Trying to revert uses of an undefined function: {}", fn_name); // Unreachable since the type checker will have already checked it.
+    }
+
+    fn use_used_vars_funcs_obj(&mut self, used_vars_funcs: UsedVarsFuncs) {
+        for (var, uses) in used_vars_funcs.vars.iter() {
+            self.use_var_multiple(var.clone(), *uses);
+        }
+
+        for (func, uses) in used_vars_funcs.funcs.iter() {
+            self.use_func_multiple(func.clone(), *uses);
+        }
+    }
+
+    fn revert_used_vars_func_obj(&mut self, used_vars_funcs: UsedVarsFuncs) {
+        for (var, uses) in used_vars_funcs.vars.iter() {
+            self.revert_var_uses(var.clone(), *uses);
+        }
+
+        for (func, uses) in used_vars_funcs.funcs.iter() {
+            self.revert_func_uses(func.clone(), *uses);
+        }
     }
 
     pub fn pretty_string_scopes(&self) -> String {
@@ -408,17 +655,14 @@ impl Optimizer {
         // If the condition is a literal, we can evaluate it and return the corresponding block.
         if let Expr::Lit(Literal::Bool(b)) = cond_opt {
             if b {
-                let then_block_opt = self.optimize_block(then_block)?;
-                return Ok(Expr::Block(then_block_opt));
+                let expr_to_opti = Expr::Block(then_block);
+                return self.optimize_expr(expr_to_opti);
             } else {
                 if let Some(else_block) = else_block {
-                    let else_block_opt = self.optimize_block(else_block)?;
-                    return Ok(Expr::Block(else_block_opt));
+                    let expr_to_opti = Expr::Block(else_block);
+                    return self.optimize_expr(expr_to_opti);
                 } else {
-                    return Ok(Expr::Block(Block {
-                        statements: vec![], // Generate an empty block.
-                        semi: false,
-                    }));
+                    return Ok(Expr::get_empty_expr());
                 }
             }
         }
@@ -431,6 +675,23 @@ impl Optimizer {
         };
 
         Ok(Expr::IfThenElse(Box::new(cond_opt), then_block_opt, else_block_opt))
+    }
+
+    fn post_block_opt_process(&self, block: Block) -> Expr {
+        // If the block can be removed and replaced by a simple expression, it will be a block with a single statement without a semi-colon.
+        // If the block is useless, it will be empty. Therefore, we can remove it.
+
+        if block.statements.is_empty() {
+            Expr::get_empty_expr() // We return an empty expression.
+        } else if block.statements.len() == 1 && !block.semi {
+            match block.statements[0].clone() {
+                Statement::Expr(expr) => expr,
+                _ => Expr::get_empty_expr(), // We return an empty expression.
+            }
+        } else {
+            // Else, the block can not be optimized out, so we keep it.
+            Expr::Block(block)
+        }
     }
 
     pub fn optimize_expr(&mut self, expr: Expr) -> Result<Expr, Error> {
@@ -447,8 +708,9 @@ impl Optimizer {
             }
             Expr::Block(block) => {
                 let opt_block = self.optimize_block(block);
+
                 match opt_block {
-                    Ok(b) => Ok(Expr::Block(b)),
+                    Ok(b) => Ok(self.post_block_opt_process(b)),
                     Err(e) => Err(e),
                 }
             }
@@ -486,8 +748,11 @@ impl Optimizer {
         // We shall first define every required parameters.
         let mut optimizer = self.from_function_call(&fn_decl.parameters);
 
+        // Main optimization goes through the modified optimization of a block
+        let is_main = fn_decl.id == "main";
+
         // Then we can optimize its block
-        let block_opt = optimizer.optimize_block(fn_decl.body)?;
+        let block_opt = optimizer._optimize_block(fn_decl.body, is_main)?;
 
         Ok(FnDeclaration {
             id: fn_decl.id,
@@ -588,12 +853,11 @@ impl Optimizer {
 
     fn define_block_functions(&mut self, block: &Block) {
         // This scans the whole block for function definitions 
-        let mut new_funcs: Vec<FnDeclaration> = Vec::new();
 
         for stmt in block.statements.iter() {
             match stmt {
                 Statement::Fn(decl) => {
-                    self.define_func(decl.id.clone());
+                    self.define_func(decl.clone());
                 }
                 _ => (),
             }
@@ -611,7 +875,7 @@ impl Optimizer {
         match opt_expr {
             Expr::Ident(ident) => {
                 let mut used_vars_funcs = UsedVarsFuncs::new();
-                used_vars_funcs.vars.push(ident.clone());
+                used_vars_funcs.add_var_use(ident.clone());
                 
                 used_vars_funcs
             }
@@ -635,12 +899,31 @@ impl Optimizer {
                 // A function call uses the function called obviously
                 // Then, we process each argument
                 let mut used_vars_funcs = UsedVarsFuncs::new();
-                used_vars_funcs.funcs.push(ident.clone());
+                used_vars_funcs.add_func_use(ident.clone());
 
                 for arg in args.0.iter() {
                     let arg_uses = self.get_used_in_expr(arg);
                     used_vars_funcs.concatenates(arg_uses);
                 }
+
+                // Moreover, it also uses the functions called inside the function body.
+                // In the future, with mutable references, it will also use the mutable reference given as an argument
+                // Yet it is already taken into account in the args processing
+
+                // Propagating the function calls used in the function called
+                let fn_decl = self.get_func_decl(ident).unwrap();
+                let mut block_uses = UsedVarsFuncs::new();
+                for stmt in fn_decl.body.statements.iter() {
+                    let stmt_uses = self.get_used_vars_and_funcs(stmt);
+                    block_uses.concatenates(stmt_uses);
+                }
+                // We only want to keep the functions used in the block
+                block_uses.vars.clear();
+                block_uses.modify_outer_scope = false;
+                block_uses.define_var = None;
+                block_uses.define_func = None;
+
+                used_vars_funcs.concatenates(block_uses);
 
                 used_vars_funcs
             }
@@ -661,6 +944,20 @@ impl Optimizer {
 
         // It is recursively built
         match opt_stmt {
+            Statement::Let(_, ident, _, expr) => {
+                let mut stmt_used = UsedVarsFuncs::new();
+                stmt_used.define_var = Some(ident.clone());
+
+                match expr {
+                    Some(e) => {
+                        let expr_used = self.get_used_in_expr(e);
+                        stmt_used.concatenates(expr_used);
+                    }
+                    None => {}
+                }
+
+                stmt_used
+            }
             Statement::Assign(ident_expr, expr) => {
                 // An assignment modifies a variable. We need to check if the variable is defined in the current scope or an outer one.
                 let ident = match ident_expr {
@@ -698,29 +995,106 @@ impl Optimizer {
 
                 used_vars_funcs
             }
-            Statement::Expr(expr) => {
-                self.get_used_in_expr(expr)
-            }
-            Statement::Fn(decl) => {
-                // A function declaration does not use anything
-                UsedVarsFuncs::new()
-            }
-            Statement::Let(_, _, _, expr) => {
-                match expr {
-                    Some(e) => {
-                        self.get_used_in_expr(e)
-                    }
-                    None => UsedVarsFuncs::new()
-                }
-            }
             Statement::While(cond, _) => {
                 // We don't need to bother about the block since it has already been processed the same way
                 self.get_used_in_expr(cond)
             }
+            Statement::Expr(expr) => {
+                self.get_used_in_expr(expr)
+            }
+            Statement::Fn(decl) => {
+                // A function declaration does not use anything, but defines the function
+                let mut stmt_used = UsedVarsFuncs::new();
+                stmt_used.define_func = Some(decl.id.clone());
+                stmt_used
+            }
+        }
+    }
+
+    // This recursive function removes useless redundant let statements from before optimizing the block and remove every useless statement
+    // For instance:
+    // let var = {
+    //     let c = 2; // Not detected as useless (Needs 3 iterations)
+    //     let a = 1 - c; // Not detected as useless (Needs 2 iterations)
+    //     let b = a + c; // Detected as useless (From the 1st iteration)
+    //     let a = 3;
+    //     let b: i32; // Detected as useless (From the 1st iteration)
+    //     let b = a + 4;
+    //     b
+    // };
+    fn optimize_block_redundant_vars(&mut self, init_statements: Vec<(Statement, UsedVarsFuncs)>) -> Vec<(Statement, UsedVarsFuncs)> {
+
+        // Keep a copy of the scopes to go back to it in the recursive call
+        let init_scopes = self.scopes.clone();
+
+        // We proceed a first redundant removal
+        let mut opt_statements: Vec<(Statement, UsedVarsFuncs)> = vec![];
+        let nb_stmts = init_statements.len();
+
+        for i in 0..nb_stmts {
+            let (stmt, used) = init_statements[i].clone();
+
+            // Update the used variables and functions. (No need to compute it again)
+            self.use_used_vars_funcs_obj(used.clone());
+
+            // If the statement is a let statement, we shall define the variable
+            // However, if it already exists in this same scope, we shall first verify whether it is useful or not.
+            // If it is not used, it can be removed
+            if let Statement::Let(_, ident, _, _) = stmt.clone() {
+                let current_scope = self.scopes.last().unwrap();
+                if let Some(uses) = current_scope.vars.get(&ident) {
+                    if *uses == 0 {
+                        // The previously defined variable is not of use.
+                        // We shall find and remove its definition from the already optimized statements
+                        for (i, (stmt, used)) in opt_statements.clone().iter().enumerate() {
+                            if used.define_var == Some(ident.clone()) {
+                                // We have found the statement
+                                opt_statements.remove(i);
+                                // We shall revert the effect of this statement
+                                self.revert_used_vars_func_obj(used.clone());
+                                break;
+                            }
+                        }
+                    }
+                }
+
+                self.define_var(ident.clone());
+            }
+
+            opt_statements.push((stmt, used));
+        }
+
+        //? Debug
+        // let initial_block = Block {
+        //     statements: init_statements.iter().map(|(stmt, _)| stmt.clone()).collect(),
+        //     semi: false, // we don't care
+        // };
+        // let resulting_block = Block {
+        //     statements: opt_statements.iter().map(|(stmt, _)| stmt.clone()).collect(),
+        //     semi: false, // we don't care
+        // };
+        // eprintln!("############################");
+        // eprintln!("Recursive call result ->");
+        // eprintln!("Initial block:\n{}", initial_block);
+        // eprintln!("Resulting block:\n{}", resulting_block);
+        // eprintln!("############################");
+
+        // We shall compare it to the one that was given at first
+        // If they are the same, we can stop the process
+        if opt_statements == init_statements {
+            return init_statements;
+        } else {
+            // recursive call
+            self.scopes = init_scopes;
+            return self.optimize_block_redundant_vars(opt_statements);
         }
     }
 
     pub fn optimize_block(&mut self, block: Block) -> Result<Block, Error> {
+        self._optimize_block(block, false)
+    }
+
+    fn _optimize_block(&mut self, block: Block, is_main: bool) -> Result<Block, Error> {
         // Optimizing blocks should remove any useless statements, and simplify useful ones.
         // If a block does not affect the program, it should be removed.
         // If it returns a simple literal or variable or operation, and the previous statements do not affect the program or anything, it should be replaced by the return value.
@@ -730,21 +1104,21 @@ impl Optimizer {
         // - Let statements that are not used.
         // - Function declarations that are not used.
 
-        let mut opt_statements: Vec<Statement> = vec![];
-
         // First define the block scope
         self.add_scope();
 
         // Then scan the block for function definitions
         self.define_block_functions(&block);
 
-        //? Debug
-        eprintln!("Optimizing block:\n{}", block);
-        eprintln!("Scopes at the beginning of the block:");
-        self.pretty_print_scopes();
+        // This copy will be used to detect useless variables that are defined multiple times:
+        // let a = 1; <--- This one
+        // let a = 2;
+        let mut optim_copy = self.clone();
 
+        let mut opt_statements: Vec<(Statement, UsedVarsFuncs)> = vec![];
         let mut block_affects_outer = false;
 
+        // First optimization of each statement
         let nb_stmts = block.statements.len();
         for i in 0..nb_stmts {
             let statement = block.statements[i].clone();
@@ -753,7 +1127,7 @@ impl Optimizer {
             let statement_opt = self.optimize_statement(statement.clone(), last_stmt)?;
 
             // Skip the statement if it is useless
-            if statement_opt == Statement::get_empty_statement() {
+            if statement_opt.is_empty_statement() {
                 continue;
             }
 
@@ -761,39 +1135,124 @@ impl Optimizer {
             let modifications = self.get_used_vars_and_funcs(&statement_opt);
 
             // Updates the uses of variables and functions
-            for var in modifications.vars.iter() {
-                self.use_var(var.clone());
-            }
-            for func in modifications.funcs.iter() {
-                self.use_func(func.clone());
-            }
             block_affects_outer = block_affects_outer || modifications.modify_outer_scope;
+            self.use_used_vars_funcs_obj(modifications.clone());
 
             // If the statement is a let statement, we shall define the variable
             if let Statement::Let(_, ident, _, _) = statement_opt.clone() {
                 self.define_var(ident.clone());
             }
 
-            opt_statements.push(statement_opt);
+            opt_statements.push((statement_opt, modifications));
         }
 
-        let opt_block: Block;
+        // Check if the block is useless -> if it does not return any value + does not affect the outer scope
+        // The main function can not be optimized out this way though
+        if !is_main && block.semi && !block_affects_outer {
+            // We remove the block scope
+            self.remove_scope();
 
-        // More treatments
-        // TODO: If there is an assignment on an unused variable, it should be removed
+            // We return an empty block
+            return Ok(Block {
+                statements: vec![],
+                semi: false,
+            });
+        }
 
-        // TODO: check if the block is useless or not. If it is, we remove it by returning an empty block
-        // If it can be optimized to a single statement which is returned, we replace it with a block with this single statement.
+        // The block is not useless, let's continue its optimization
+        // We will start by removing any redundant definition of variables that are not used
 
-        opt_block = Block {
-            statements: opt_statements,
+        // Remove the redundant definition of variables that are useless
+        // For instance:
+        // {
+        //      let a = 1; <--- This one
+        //      let a = 2;
+        //      a
+        // }
+        opt_statements = optim_copy.optimize_block_redundant_vars(opt_statements);
+
+        // Get back the correct final scopes then
+        self.scopes = optim_copy.scopes.clone();
+
+        // Now that we have removed every redundant variable definition, and counted the number of times each local var and func is used in this block,
+        // we shall remove the useless ones before exiting.
+        // Once we have removed the first ones being used 0 times, we should process again if there are more to remove.
+        // We stop iterating over the block once there is no remaining variable being used 0 times.
+        // Finally, we remove the unused functions similarly.
+        // TODO: manage mutable references inside functions call, which can therefore be a call to another function or anything
+
+        //? --- Variable optimizations
+
+        // Special case for the main function
+        // -> In order to avoid optimizing out the main function as well since it does not return any value
+        // we consider that each remaining variable is used at least once
+        if is_main {
+            let last_scope = self.scopes.last_mut().unwrap();
+            for (_, uses) in last_scope.vars.iter_mut() {
+                if uses.clone() == 0 {
+                    *uses = 1;
+                }
+            }
+        }
+
+        let mut useless_vars = self.scopes.last().unwrap().get_unused_vars();
+        
+        while !useless_vars.is_empty() {
+            let mut new_opt_statements: Vec<(Statement, UsedVarsFuncs)> = vec![];
+        
+            for (stmt, used) in opt_statements.iter() {
+                if let Some(var_id) = &used.define_var {
+                    if useless_vars.contains(&var_id) {
+                        // We do not add the statement to the final statements
+                        // We revert the effect of this statement
+                        self.revert_used_vars_func_obj(used.clone());
+                        // We remove this variable from the current scope
+                        self.scopes.last_mut().unwrap().remove_var(var_id.clone());
+                    } else {
+                        new_opt_statements.push((stmt.clone(), used.clone()));
+                    }
+                } else {
+                    new_opt_statements.push((stmt.clone(), used.clone()));
+                }
+            }
+        
+            opt_statements = new_opt_statements;
+            useless_vars = self.scopes.last().unwrap().get_unused_vars();
+        }
+
+        //? --- Function optimizations
+
+        let mut useless_funcs = self.scopes.last().unwrap().get_unused_funcs();
+
+        while !useless_funcs.is_empty() {
+            let mut new_opt_statements: Vec<(Statement, UsedVarsFuncs)> = vec![];
+        
+            for (stmt, used) in opt_statements.iter() {
+                if let Some(fn_id) = &used.define_func {
+                    if useless_funcs.contains(&fn_id) {
+                        // We do not add the statement to the final statements
+                        // We revert the effect of this statement
+                        self.revert_used_vars_func_obj(used.clone());
+                        // We remove this function from the current scope
+                        self.scopes.last_mut().unwrap().remove_func(fn_id.clone());
+                    } else {
+                        new_opt_statements.push((stmt.clone(), used.clone()));
+                    }
+                } else {
+                    new_opt_statements.push((stmt.clone(), used.clone()));
+                }
+            }
+        
+            opt_statements = new_opt_statements;
+            useless_funcs = self.scopes.last().unwrap().get_unused_funcs();
+        }
+
+        // Building the final block
+
+        let opt_block = Block {
+            statements: opt_statements.iter().map(|(stmt, _)| stmt.clone()).collect(),
             semi: block.semi,
         };
-        
-        //? Debug
-        eprintln!("Finished optimization of block:\n{}", block);
-        eprintln!("Scopes at the end of the block:");
-        self.pretty_print_scopes();
 
         // Remove the block scope
         self.remove_scope();
@@ -815,7 +1274,7 @@ impl Optimizer {
 
         // First define each function
         for fn_decl in prog.0.iter() {
-            self.define_func(fn_decl.id.clone());
+            self.define_func(fn_decl.clone());
 
             if fn_decl.id == "main" {
                 // The main function automatically has 1 use
@@ -823,14 +1282,29 @@ impl Optimizer {
             }
         }
 
-        // Then optimize each of them
+        // Then optimize each of them and replace the previous definition
         for fn_decl in prog.0.iter() {
             let fn_decl_opt = self.optimize_fn_declaration(fn_decl.clone())?;
+            let init_scope = self.scopes.last_mut().unwrap();
+            init_scope.remove_func(fn_decl.id.clone());
+            init_scope.define_func(fn_decl_opt.clone());
+
             opt_fn_decls.push(fn_decl_opt);
         }
 
-        // TODO: Remove unused functions
-        // Be careful, since the main function does not have a 'real' impact, it should not be optimized by removing unused variables or anything.
+        // At this point, each function has been completely optimized
+        // If one of the given functions is not used, we can remove it from the program (except for main)
+        let mut final_opt_fn_decls: Vec<FnDeclaration> = vec![];
+        for fn_decl in opt_fn_decls.iter() {
+            if fn_decl.id == "main" {
+                final_opt_fn_decls.push(fn_decl.clone());
+                continue;
+            }
+
+            if self.get_func_uses(&fn_decl.id).unwrap() > 0 {
+                final_opt_fn_decls.push(fn_decl.clone());
+            }
+        }
 
         Ok(Prog(opt_fn_decls))
     }
