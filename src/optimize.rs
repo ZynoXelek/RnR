@@ -220,6 +220,248 @@ impl fmt::Display for Scope {
 
 //?#################################################################################################
 //?#                                                                                               #
+//?#                                 Var and Func usage tracking                                   #
+//?#                                                                                               #
+//?#################################################################################################
+
+// Define private types for variable and function usage tracking
+
+//? Helper methods to concatenate hashmaps of uses
+
+fn concatenate_uses(uses1: &HashMap<String, Uses>, uses2: &HashMap<String, Uses>) -> HashMap<String, Uses> {
+    let mut concatenated_uses = uses1.clone();
+
+    for (var, uses) in uses2.iter() {
+        if let Some(uses_self) = concatenated_uses.get_mut(var) {
+            *uses_self += uses;
+        } else {
+            concatenated_uses.insert(var.clone(), *uses);
+        }
+    }
+
+    concatenated_uses
+}
+
+//? Any expression can be described this way
+
+// A block usage shows what is used from the outer block, on scope exit.
+#[derive(Clone, Debug, PartialEq)]
+struct ExprUsage {
+    vars: HashMap<String, Uses>, // The list of the names of each variable used in the expr (used means read, not written)
+    funcs: HashMap<String, Uses>, // The list of the names of each function called in the expr
+    assigned_vars: Vec<String>, // The name of the outer variables assigned in the expr (for block cases)
+}
+
+//TODO: remove if unnecessary
+// #[derive(Clone, Debug, PartialEq)]
+// enum ExprUsage {
+//     Basic(BasicUsage), // Ident, Lit
+//     BinOp(Box<ExprUsage>, Box<ExprUsage>), // BinOp
+//     UnOp(Box<ExprUsage>), // UnOp
+//     Call(String, Vec<ExprUsage>), // Call: func name to get the 
+//     IfThenElse(Box<ExprUsage>, Box<BlockUsage>, Option<Box<BlockUsage>>), // IfThenElse
+//     Block(BlockUsage), // Block
+// }
+
+impl ExprUsage {
+    fn new() -> Self {
+        Self {
+            vars: HashMap::new(),
+            funcs: HashMap::new(),
+            assigned_vars: vec![],
+        }
+    }
+
+    fn get_used_vars(&self) -> HashMap<String, Uses> {
+        self.vars.clone()
+    }
+
+    fn get_used_funcs(&self) -> HashMap<String, Uses> {
+        self.funcs.clone()
+    }
+
+    fn get_assigned_vars(&self) -> Vec<String> {
+        self.assigned_vars.clone()
+    }
+
+    fn add_var_use(&mut self, var: String) {
+        if let Some(uses) = self.vars.get_mut(&var) {
+            *uses += 1;
+        } else {
+            self.vars.insert(var, 1);
+        }
+    }
+
+    fn add_func_use(&mut self, func: String) {
+        if let Some(uses) = self.funcs.get_mut(&func) {
+            *uses += 1;
+        } else {
+            self.funcs.insert(func, 1);
+        }
+    }
+
+    fn add_assigned_var(&mut self, var: String) {
+        // Avoid duplicates
+        if !self.assigned_vars.contains(&var) {
+            self.assigned_vars.push(var);
+        }
+    }
+
+    fn concatenate(&mut self, other: ExprUsage) {
+        self.vars = concatenate_uses(&self.vars, &other.vars);
+        self.funcs = concatenate_uses(&self.funcs, &other.funcs);
+        for var in other.assigned_vars {
+            self.add_assigned_var(var);
+        }
+    }
+}
+
+//? Single statement
+
+#[derive(Clone, Debug, PartialEq)]
+struct StmtUsage {
+    vars: HashMap<String, Uses>, // The list of the names of each variable used in the statement (used means read, not written)
+    funcs: HashMap<String, Uses>, // The list of the names of each function called in the statement
+    assigned_vars: Vec<String>, // The name of the variables assigned in the statement
+    modify_outer_scope: bool, // Whether the statement modifies a variable from an outer scope
+    define_var: Option<String>, // The name of the variable defined in the statement if there is one
+    define_func: Option<String>, // The name of the function defined in the statement if there is one
+}
+
+impl StmtUsage {
+    fn new() -> Self {
+        Self {
+            vars: HashMap::new(),
+            funcs: HashMap::new(),
+            assigned_vars: vec![],
+            modify_outer_scope: false,
+            define_var: None,
+            define_func: None,
+        }
+    }
+
+    fn get_used_vars(&self) -> HashMap<String, Uses> {
+        self.vars.clone()
+    }
+
+    fn get_used_funcs(&self) -> HashMap<String, Uses> {
+        self.funcs.clone()
+    }
+
+    fn get_assigned_vars(&self) -> Vec<String> {
+        self.assigned_vars.clone()
+    }
+
+    fn add_var_use(&mut self, var: String) {
+        if let Some(uses) = self.vars.get_mut(&var) {
+            *uses += 1;
+        } else {
+            self.vars.insert(var, 1);
+        }
+    }
+
+    fn add_func_use(&mut self, func: String) {
+        if let Some(uses) = self.funcs.get_mut(&func) {
+            *uses += 1;
+        } else {
+            self.funcs.insert(func, 1);
+        }
+    }
+
+    fn add_assigned_var(&mut self, var: String) {
+        // Avoid duplicates
+        if !self.assigned_vars.contains(&var) {
+            self.assigned_vars.push(var);
+        }
+    }
+}
+
+//TODO: Remove if unnecessary
+// //? This treats any possible case
+
+// #[derive(Clone, Debug, PartialEq)]
+// struct UsedVarsFuncs {
+//     usage: StmtUsage,
+//     modify_outer_scope: bool,
+// }
+// enum UsedVarsFuncs {
+//     Stmt(StmtUsage),
+//     Block(BlockUsage),
+//     IfThenElse(StmtUsage, BlockUsage, Option<BlockUsage>),
+//     While(StmtUsage, BlockUsage),
+// }
+
+// impl UsedVarsFuncs {
+
+//     fn stmt(stmt_usage: StmtUsage) -> Self {
+//         UsedVarsFuncs::Stmt(stmt_usage)
+//     }
+
+//     fn block(block_usage: BlockUsage) -> Self {
+//         UsedVarsFuncs::Block(block_usage)
+//     }
+
+//     fn if_then_else(cond: StmtUsage, then_block: BlockUsage, else_block: Option<BlockUsage>) -> Self {
+//         UsedVarsFuncs::IfThenElse(cond, then_block, else_block)
+//     }
+
+//     fn while_loop(cond: StmtUsage, block: BlockUsage) -> Self {
+//         UsedVarsFuncs::While(cond, block)
+//     }
+
+//     fn get_used_vars(&self) -> HashMap<String, Uses> {
+//         match self {
+//             UsedVarsFuncs::Stmt(stmt_usage) => {
+//                 stmt_usage.vars.clone()
+//             }
+//             UsedVarsFuncs::Block(block_usage) => {
+//                 block_usage.vars.clone()
+//             }
+//             UsedVarsFuncs::While(cond, block) => {
+//                 let vars_used = cond.vars.clone();
+//                 concatenate_uses(&vars_used, &block.vars)
+//             }
+//             UsedVarsFuncs::IfThenElse(cond, then_block, else_block) => {
+//                 let vars_used = cond.vars.clone();
+//                 let mut vars_used = concatenate_uses(&vars_used, &then_block.vars);
+
+//                 if let Some(else_block) = else_block {
+//                     vars_used = concatenate_uses(&vars_used, &else_block.vars);
+//                 }
+
+//                 vars_used
+//             }
+//         }
+//     }
+
+//     fn get_used_funcs(&self) -> HashMap<String, Uses> {
+//         match self {
+//             UsedVarsFuncs::Stmt(stmt_usage) => {
+//                 stmt_usage.funcs.clone()
+//             }
+//             UsedVarsFuncs::Block(block_usage) => {
+//                 block_usage.funcs.clone()
+//             }
+//             UsedVarsFuncs::While(cond, block) => {
+//                 let funcs_used = cond.funcs.clone();
+//                 concatenate_uses(&funcs_used, &block.funcs)
+//             }
+//             UsedVarsFuncs::IfThenElse(cond, then_block, else_block) => {
+//                 let funcs_used = cond.funcs.clone();
+//                 let mut funcs_used = concatenate_uses(&funcs_used, &then_block.funcs);
+
+//                 if let Some(else_block) = else_block {
+//                     funcs_used = concatenate_uses(&funcs_used, &else_block.funcs);
+//                 }
+
+//                 funcs_used
+//             }
+//         }
+//     }
+// }
+
+//?#################################################################################################
+//?#                                                                                               #
 //?#                                           Optimizer                                           #
 //?#                                                                                               #
 //?#################################################################################################
@@ -251,77 +493,6 @@ impl Optimize<Prog> for Prog {
         // let result = optimizer.get_result().get_prog();
 
         Ok(result?)
-    }
-}
-
-
-// Define a private type for the return value of the update_used_vars_and_funcs function
-#[derive(Clone, Debug, PartialEq)]
-struct UsedVarsFuncs {
-    vars: HashMap<String, Uses>, // The list of the names of each variable used in the statement (used means read, not written)
-    funcs: HashMap<String, Uses>, // The list of the names of each function called in the statement
-    modify_outer_scope: bool, // Whether the statement modifies a variable from an outer scope
-    define_var: Option<String>, // The name of the variable defined in the statement if there is one
-    define_func: Option<String>, // The name of the function defined in the statement if there is one
-}
-
-impl UsedVarsFuncs {
-    fn new() -> Self {
-        Self {
-            vars: HashMap::new(),
-            funcs: HashMap::new(),
-            modify_outer_scope: false,
-            define_var: None,
-            define_func: None,
-        }
-    }
-
-    fn add_var_use(&mut self, var: String) {
-        if let Some(uses) = self.vars.get_mut(&var) {
-            *uses += 1;
-        } else {
-            self.vars.insert(var, 1);
-        }
-    }
-
-    fn add_func_use(&mut self, func: String) {
-        if let Some(uses) = self.funcs.get_mut(&func) {
-            *uses += 1;
-        } else {
-            self.funcs.insert(func, 1);
-        }
-    }
-
-    fn concatenates(&mut self, other: UsedVarsFuncs) {
-        for (var, uses) in other.vars.iter() {
-            if let Some(uses_self) = self.vars.get_mut(var) {
-                *uses_self += uses;
-            } else {
-                self.vars.insert(var.clone(), *uses);
-            }
-        }
-
-        for (func, uses) in other.funcs.iter() {
-            if let Some(uses_self) = self.funcs.get_mut(func) {
-                *uses_self += uses;
-            } else {
-                self.funcs.insert(func.clone(), *uses);
-            }
-        }
-        self.modify_outer_scope = self.modify_outer_scope || other.modify_outer_scope;
-
-        // Define var can only be set by statements, not expressions.
-        // Therefore, when we concatenate UsedVarsFuncs, we can never have two define_var set since
-        // a concatenation only happens when we build the object for an expression
-        // Both of them should therefore be None at this point.
-        // Just in case, we keep the first not None value if there is one.
-        // Same for functions
-        if self.define_var.is_none() {
-            self.define_var = other.define_var;
-        }
-        if self.define_func.is_none() {
-            self.define_func = other.define_func;
-        }
     }
 }
 
@@ -493,21 +664,28 @@ impl Optimizer {
     }
 
     fn use_used_vars_funcs_obj(&mut self, used_vars_funcs: UsedVarsFuncs) {
-        for (var, uses) in used_vars_funcs.vars.iter() {
+
+        let used_vars = used_vars_funcs.get_used_vars();
+        let used_funcs = used_vars_funcs.get_used_funcs();
+
+        for (var, uses) in used_vars.iter() {
             self.use_var_multiple(var.clone(), *uses);
         }
 
-        for (func, uses) in used_vars_funcs.funcs.iter() {
+        for (func, uses) in used_funcs.iter() {
             self.use_func_multiple(func.clone(), *uses);
         }
     }
 
     fn revert_used_vars_func_obj(&mut self, used_vars_funcs: UsedVarsFuncs) {
-        for (var, uses) in used_vars_funcs.vars.iter() {
+        let used_vars = used_vars_funcs.get_used_vars();
+        let used_funcs = used_vars_funcs.get_used_funcs();
+
+        for (var, uses) in used_vars.iter() {
             self.revert_var_uses(var.clone(), *uses);
         }
 
-        for (func, uses) in used_vars_funcs.funcs.iter() {
+        for (func, uses) in used_funcs.iter() {
             self.revert_func_uses(func.clone(), *uses);
         }
     }
@@ -874,19 +1052,19 @@ impl Optimizer {
         
         match opt_expr {
             Expr::Ident(ident) => {
-                let mut used_vars_funcs = UsedVarsFuncs::new();
-                used_vars_funcs.add_var_use(ident.clone());
+                let mut stmt_usage = StmtUsage::new();
+                stmt_usage.add_var_use(ident.clone());
                 
-                used_vars_funcs
+                UsedVarsFuncs::stmt(stmt_usage)
             }
             Expr::Lit(_) => {
-                UsedVarsFuncs::new()
+                UsedVarsFuncs::stmt(StmtUsage::new())
             }
             Expr::BinOp(_, left, right) => {
                 let mut left_used = self.get_used_in_expr(left);
                 let right_used = self.get_used_in_expr(right);
 
-                left_used.concatenates(right_used);
+                left_used.concatenate(right_used);
                 left_used
             }
             Expr::UnOp(_, inner) => {
@@ -903,7 +1081,7 @@ impl Optimizer {
 
                 for arg in args.0.iter() {
                     let arg_uses = self.get_used_in_expr(arg);
-                    used_vars_funcs.concatenates(arg_uses);
+                    used_vars_funcs.concatenate(arg_uses);
                 }
 
                 // Moreover, it also uses the functions called inside the function body.
@@ -915,7 +1093,7 @@ impl Optimizer {
                 let mut block_uses = UsedVarsFuncs::new();
                 for stmt in fn_decl.body.statements.iter() {
                     let stmt_uses = self.get_used_vars_and_funcs(stmt);
-                    block_uses.concatenates(stmt_uses);
+                    block_uses.concatenate(stmt_uses);
                 }
                 // We only want to keep the functions used in the block
                 block_uses.vars.clear();
@@ -923,7 +1101,7 @@ impl Optimizer {
                 block_uses.define_var = None;
                 block_uses.define_func = None;
 
-                used_vars_funcs.concatenates(block_uses);
+                used_vars_funcs.concatenate(block_uses);
 
                 used_vars_funcs
             }
@@ -951,7 +1129,7 @@ impl Optimizer {
                 match expr {
                     Some(e) => {
                         let expr_used = self.get_used_in_expr(e);
-                        stmt_used.concatenates(expr_used);
+                        stmt_used.concatenate(expr_used);
                     }
                     None => {}
                 }
@@ -988,14 +1166,18 @@ impl Optimizer {
                     }
                 }
 
+                let mut stmt_used = UsedVarsFuncs::new();
+                stmt_used.assign_var = Some(ident.clone());
+                stmt_used.modify_outer_scope = modify_outer_scope;
+
                 // Then, we get the used variables and functions in the expression
-                let mut used_vars_funcs = self.get_used_in_expr(expr);
+                let used_vars_funcs = self.get_used_in_expr(expr);
+                
+                stmt_used.concatenate(used_vars_funcs);
 
-                used_vars_funcs.modify_outer_scope = used_vars_funcs.modify_outer_scope || modify_outer_scope;
-
-                used_vars_funcs
+                stmt_used
             }
-            Statement::While(cond, _) => {
+            Statement::While(cond, block) => {
                 // We don't need to bother about the block since it has already been processed the same way
                 self.get_used_in_expr(cond)
             }
@@ -1046,10 +1228,17 @@ impl Optimizer {
                     if *uses == 0 {
                         // The previously defined variable is not of use.
                         // We shall find and remove its definition from the already optimized statements
-                        for (i, (stmt, used)) in opt_statements.clone().iter().enumerate() {
-                            if used.define_var == Some(ident.clone()) {
-                                // We have found the statement
-                                opt_statements.remove(i);
+                        // We should start by the end of the list to remove the correct one
+                        let nb_opt_stmts = opt_statements.len();
+                        for (i, (stmt, used)) in opt_statements.clone().iter().rev().enumerate() {
+                            if used.assign_var == Some(ident.clone()) {
+                                // We have found an assignment statement, we shall remove it
+                                opt_statements.remove(nb_opt_stmts - 1 - i);
+                                // We shall revert the effect of this statement
+                                self.revert_used_vars_func_obj(used.clone());
+                            } else if used.define_var == Some(ident.clone()) {
+                                // We have found the definition statement, it is the end
+                                opt_statements.remove(nb_opt_stmts - 1 - i);
                                 // We shall revert the effect of this statement
                                 self.revert_used_vars_func_obj(used.clone());
                                 break;
@@ -1122,7 +1311,7 @@ impl Optimizer {
         let nb_stmts = block.statements.len();
         for i in 0..nb_stmts {
             let statement = block.statements[i].clone();
-            let last_stmt = i == nb_stmts - 1;
+            let last_stmt = (i == nb_stmts - 1) && !block.semi; // To avoid optimizing out the return value of a block
 
             let statement_opt = self.optimize_statement(statement.clone(), last_stmt)?;
 
@@ -1199,15 +1388,33 @@ impl Optimizer {
         
         while !useless_vars.is_empty() {
             let mut new_opt_statements: Vec<(Statement, UsedVarsFuncs)> = vec![];
+
+            // We shall go through the statements in a reverse order to avoid removing the wrong definition of a var
+            // For example:
+            // let a = 1; <--- a is useful
+            // let b = f(a);
+            // let a = 0; <--- This one is not useful and this one should be removed
         
-            for (stmt, used) in opt_statements.iter() {
-                if let Some(var_id) = &used.define_var {
+            for (stmt, used) in opt_statements.iter().rev() {
+                if let Some(var_id) = &used.assign_var { // Assigning a value to a useless var
+                    if useless_vars.contains(&var_id) {
+                        // We do not add the statement to the final statements
+                        // We revert the effect of this statement
+                        self.revert_used_vars_func_obj(used.clone());
+                    } else {
+                        new_opt_statements.push((stmt.clone(), used.clone()));
+                    }
+                } else if let Some(var_id) = &used.define_var { // Defining a useless var
                     if useless_vars.contains(&var_id) {
                         // We do not add the statement to the final statements
                         // We revert the effect of this statement
                         self.revert_used_vars_func_obj(used.clone());
                         // We remove this variable from the current scope
                         self.scopes.last_mut().unwrap().remove_var(var_id.clone());
+
+                        // We remove this variable from the useless variables
+                        let useless_index = useless_vars.iter().position(|x| x == var_id).unwrap();
+                        useless_vars.remove(useless_index);
                     } else {
                         new_opt_statements.push((stmt.clone(), used.clone()));
                     }
@@ -1216,7 +1423,9 @@ impl Optimizer {
                 }
             }
         
+            // We shall reverse the order of statements to get back to the correct block order
             opt_statements = new_opt_statements;
+            opt_statements.reverse();
             useless_vars = self.scopes.last().unwrap().get_unused_vars();
         }
 
@@ -1225,6 +1434,9 @@ impl Optimizer {
         let mut useless_funcs = self.scopes.last().unwrap().get_unused_funcs();
 
         while !useless_funcs.is_empty() {
+
+            // Here we don't have to bother about the order since a function with a given name can only be defined once in some scope
+
             let mut new_opt_statements: Vec<(Statement, UsedVarsFuncs)> = vec![];
         
             for (stmt, used) in opt_statements.iter() {

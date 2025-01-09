@@ -573,6 +573,35 @@ pub mod test_optimize {
     }
 
     #[test]
+    fn test_while_opti() {
+        let block: Block = parse(
+            "
+            {
+                let mut a = 1;
+                while a < 10 {
+                    5 + 1; // Should be optimized out
+                    a = a + 1;
+                    3 + 5; // Should be optimized out
+                }
+                a
+            }
+            "
+        );
+        let expected: Block = parse(
+            "
+            {
+                let mut a = 1;
+                while a < 10 {
+                    a = a + 1;
+                }
+                a
+            }
+            ",
+        );
+        assert_optimize(&block, expected);
+    }
+
+    #[test]
     fn test_useless_functions_removal() {
         let block: Block = parse(
             "
@@ -641,7 +670,6 @@ pub mod test_optimize {
         assert_optimize(&block, expected);
     }
 
-    // TODO
     #[test]
     fn test_useless_var_def_2() {
         let block: Block = parse(
@@ -668,20 +696,8 @@ pub mod test_optimize {
         assert_optimize(&block, expected);
 
         // Here, we should not forget to remove the assignation of b = 2 since it is never used.
-        // Therefore, assignation should be considered variable definition (be careful about assigning to outer scope variables).
-        //TODO: test case
-        // {
-        //     let a;
-        //     if true {
-        //         a = 2;
-        //     } else {
-        //         a = 3;
-        //     }
-        //     a
-        // }
     }
 
-    // TODO
     #[test]
     fn test_useless_var_def_3() {
         let block: Block = parse(
@@ -712,6 +728,32 @@ pub mod test_optimize {
 
     #[test]
     fn test_useless_var_def_4() {
+        let block: Block = parse(
+            "
+            {
+                let a = 1;
+                let b = a + 2;
+                let a = 3; // Should be optimized out because it is never used
+                b
+            }
+            "
+        );
+        let expected: Block = parse(
+            "
+            {
+                let a = 1;
+                let b = a + 2;
+                b
+            }
+            ",
+        );
+        assert_optimize(&block, expected);
+
+        // Here, the trick is to be able to correctly locate where the useless variable is since it is not necessarily the first time 'a' is defined.
+    }
+
+    #[test]
+    fn test_useless_var_def_5() {
         let block: Block = parse(
             "
             {
@@ -751,6 +793,138 @@ pub mod test_optimize {
         //     let b = a + 4;
         //     b
         // };
+    }
+
+    #[test]
+    fn test_useless_var_def_inner_block() {
+        let block: Block = parse(
+            "
+            {
+                fn f(a: i32) -> i32 { // In the end, this function is useless
+                    a + 1
+                }
+
+                fn g() -> i32 {
+                    1
+                }
+
+                let a;
+                let mut b = 2; // Useless var, should be removed
+                let c = {
+                    a = g();
+                    b = f(1); // Useless var, should be removed
+                    a + 3
+                };
+                a + c
+            }
+            "
+        );
+        let expected: Block = parse(
+            "
+            {
+                fn g() -> i32 {
+                    1
+                }
+
+                let a;
+                let c = {
+                    a = g();
+                    a + 3
+                };
+                a + c
+            }
+            ",
+        );
+        assert_optimize(&block, expected);
+    }
+
+    #[test]
+    fn test_useless_var_def_with_if() {
+        let block: Block = parse(
+            "
+            {
+                fn f(a: i32) -> i32 { // In the end, this function is useless
+                    a + 1
+                }
+
+                fn g() -> i32 {
+                    1
+                }
+
+                let a;
+                let b; // Useless var, should be removed
+                let c = true;
+                if c {
+                    b = 1; // Useless var, should be removed
+                    a = g();
+                } else {
+                    b = f(2); // Useless var, should be removed
+                    a = 3;
+                }
+                a
+            }
+            "
+        );
+        let expected: Block = parse(
+            "
+            {
+                fn g() -> i32 {
+                    1
+                }
+
+                let a;
+                let c = true;
+                if c {
+                    a = g();
+                } else {
+                    a = 3;
+                }
+                a
+            }
+            ",
+        );
+        assert_optimize(&block, expected);
+    }
+
+    #[test]
+    fn test_useless_var_def_with_while() {
+        let block: Block = parse(
+            "
+            {
+                fn f(a: i32) -> i32 { // In the end, this function is useless
+                    a + 1
+                }
+
+                fn g() -> i32 {
+                    1
+                }
+
+                let mut a = 3;
+                let mut b = 0; // Useless var, should be removed
+                while a < 10 {
+                    a = a + g(); // a + 1
+                    b = f(a); // Useless var, should be removed
+                }
+                a
+            }
+            "
+        );
+        let expected: Block = parse(
+            "
+            {
+                fn g() -> i32 {
+                    1
+                }
+
+                let mut a = 3;
+                while a < 10 {
+                    a = a + g(); // a + 1
+                }
+                a
+            }
+            ",
+        );
+        assert_optimize(&block, expected);
     }
 
     //? Optimizing programs
