@@ -314,6 +314,50 @@ impl ExprUsage {
             self.add_assigned_var(var);
         }
     }
+
+    fn concatenates_vec(&mut self, other: Vec<ExprUsage>) {
+        for usage in other {
+            self.concatenate(usage);
+        }
+    }
+}
+
+#[derive(Clone, Debug, PartialEq)]
+struct OptExpr {
+    expr: Expr,
+    usage: ExprUsage,
+}
+
+impl OptExpr {
+    fn new(expr: Expr, usage: ExprUsage) -> Self {
+        Self { expr, usage }
+    }
+
+    fn as_tuple(self) -> (Expr, ExprUsage) {
+        (self.expr, self.usage)
+    }
+}
+
+#[derive(Clone, Debug, PartialEq)]
+struct OptBlock {
+    block: Block,
+    usage: ExprUsage,
+}
+
+impl OptBlock {
+    fn new(block: Block, usage: ExprUsage) -> Self {
+        Self { block, usage }
+    }
+
+    fn as_tuple(self) -> (Block, ExprUsage) {
+        (self.block, self.usage)
+    }
+}
+
+impl From<OptBlock> for OptExpr {
+    fn from(opt_block: OptBlock) -> Self {
+        Self::new(Expr::Block(opt_block.block), opt_block.usage)
+    }
 }
 
 //? Single statement
@@ -373,6 +417,18 @@ impl StmtUsage {
         if !self.assigned_vars.contains(&var) {
             self.assigned_vars.push(var);
         }
+    }
+}
+
+#[derive(Clone, Debug, PartialEq)]
+struct OptStmt {
+    stmt: Statement,
+    usage: StmtUsage,
+}
+
+impl OptStmt {
+    fn new(stmt: Statement, usage: StmtUsage) -> Self {
+        Self { stmt, usage }
     }
 }
 
@@ -469,30 +525,27 @@ impl StmtUsage {
 impl Optimize<Expr> for Expr {
     fn optimize(&self) -> Result<Expr, Error> {
         let mut optimizer = Optimizer::new();
-        let result = optimizer.optimize_expr(self.clone());
-        // let result = optimizer.get_result().get_expr();
+        let result = optimizer.optimize_expr(self.clone())?;
 
-        Ok(result?)
+        Ok(result.expr)
     }
 }
 
 impl Optimize<Block> for Block {
     fn optimize(&self) -> Result<Block, Error> {
         let mut optimizer = Optimizer::new();
-        let result = optimizer.optimize_block(self.clone());
-        // let result = optimizer.get_result().get_block();
+        let result = optimizer.optimize_block(self.clone())?;
 
-        Ok(result?)
+        Ok(result.block)
     }
 }
 
 impl Optimize<Prog> for Prog {
     fn optimize(&self) -> Result<Prog, Error> {
         let mut optimizer = Optimizer::new();
-        let result = optimizer.optimize_prog(self.clone());
-        // let result = optimizer.get_result().get_prog();
+        let result = optimizer.optimize_prog(self.clone())?;
 
-        Ok(result?)
+        Ok(result)
     }
 }
 
@@ -663,7 +716,7 @@ impl Optimizer {
         unreachable!("Trying to revert uses of an undefined function: {}", fn_name); // Unreachable since the type checker will have already checked it.
     }
 
-    fn use_used_vars_funcs_obj(&mut self, used_vars_funcs: UsedVarsFuncs) {
+    fn use_used_vars_funcs_obj(&mut self, used_vars_funcs: StmtUsage) {
 
         let used_vars = used_vars_funcs.get_used_vars();
         let used_funcs = used_vars_funcs.get_used_funcs();
@@ -677,7 +730,7 @@ impl Optimizer {
         }
     }
 
-    fn revert_used_vars_func_obj(&mut self, used_vars_funcs: UsedVarsFuncs) {
+    fn revert_used_vars_func_obj(&mut self, used_vars_funcs: StmtUsage) {
         let used_vars = used_vars_funcs.get_used_vars();
         let used_funcs = used_vars_funcs.get_used_funcs();
 
@@ -710,19 +763,19 @@ impl Optimizer {
     //?#                              Expressions                        #
     //?###################################################################
 
-    fn optimize_unop(&mut self, unop: UnOp, operand: Expr) -> Result<Expr, Error> {
+    fn optimize_unop(&mut self, unop: UnOp, operand: Expr) -> Result<OptExpr, Error> {
         // For now, the unop optimization only optimizes the operand, and returns the same unop if it is not a literal.
 
-        let operand_opt = self.optimize_expr(operand)?;
+        let (operand_opt, operand_use) = self.optimize_expr(operand)?.as_tuple();
 
         // If the operand is the same unop for negations, we can remove them.
         if unop == UnOp::Neg {
             if let Expr::UnOp(UnOp::Neg, inner_inner) = operand_opt {
-                return Ok(*inner_inner);
+                return Ok(OptExpr::new(*inner_inner, operand_use));
             }
         } else if unop == UnOp::Bang {
             if let Expr::UnOp(UnOp::Bang, inner_inner) = operand_opt {
-                return Ok(*inner_inner);
+                return Ok(OptExpr::new(*inner_inner, operand_use));
             }
         }
 
@@ -733,41 +786,50 @@ impl Optimizer {
                 let val = lit.into();
                 let result = unop.eval(val);
 
-                // Now we need to convert it as an Expr
+                // Now we need to convert it as an OptExpr
                 match result {
                     Ok(val) => {
                         let lit = Literal::from(val);
-                        Ok(Expr::Lit(lit))
+                        let lit_expr = Expr::Lit(lit);
+                        Ok(OptExpr::new(lit_expr, operand_use)) // We keep the same operand use, which should therefore be a new() one.
                     }
                     Err(e) => Err(e.to_string()), //TODO: Use custom error
                 }
             }
-            _ => Ok(Expr::UnOp(unop, Box::new(operand_opt))),
+            _ => {
+                let expr = Expr::UnOp(unop, Box::new(operand_opt));
+                Ok(OptExpr::new(expr, operand_use))
+            },
         }
     }
 
-    fn optimize_binop(&mut self, binop: BinOp, left: Expr, right: Expr) -> Result<Expr, Error> {
+    fn optimize_binop(&mut self, binop: BinOp, left: Expr, right: Expr) -> Result<OptExpr, Error> {
         // For now, the binop optimization only optimizes the two operands, and returns the same binop if they are not both literals.
         // Arrays get operations can be optimized if the index is a literal
         // Boolean operations may be short-circuited
 
-        let left_opt = self.optimize_expr(left)?;
-        let right_opt = self.optimize_expr(right)?;
+        let (left_opt, left_use) = self.optimize_expr(left)?.as_tuple();
+        let (right_opt, right_use) = self.optimize_expr(right)?.as_tuple();
+
+        let mut complete_use = left_use.clone();
+        complete_use.concatenate(right_use.clone());
 
         // Boolean short-circuiting
         if binop == BinOp::And {
             if let Expr::Lit(Literal::Bool(false)) = left_opt {
-                return Ok(Expr::Lit(Literal::Bool(false)));
+                let expr = Expr::Lit(Literal::Bool(false));
+                return Ok(OptExpr::new(expr, left_use)); // We don't use the right operand
             }
             if let Expr::Lit(Literal::Bool(true)) = left_opt {
-                return Ok(right_opt);
+                return Ok(OptExpr::new(right_opt, right_use)); // We don't use the left operand
             }
         } else if binop == BinOp::Or {
             if let Expr::Lit(Literal::Bool(true)) = left_opt {
-                return Ok(Expr::Lit(Literal::Bool(true)));
+                let expr = Expr::Lit(Literal::Bool(true));
+                return Ok(OptExpr::new(expr, left_use)); // We don't use the right operand
             }
             if let Expr::Lit(Literal::Bool(false)) = left_opt {
-                return Ok(right_opt);
+                return Ok(OptExpr::new(right_opt, right_use)); // We don't use the left operand
             }
         }
 
@@ -787,72 +849,98 @@ impl Optimizer {
                 match result {
                     Ok(val) => {
                         let lit = Literal::from(val);
-                        Ok(Expr::Lit(lit))
+                        let expr = Expr::Lit(lit);
+                        Ok(OptExpr::new(expr, complete_use)) // We keep the same operand use, which should therefore be a new() one.
                     }
                     Err(e) => Err(e.to_string()), //TODO: Use custom error
                 }
             }
-            _ => Ok(Expr::BinOp(binop, Box::new(left_opt), Box::new(right_opt))),
+            _ => {
+                let expr = Expr::BinOp(binop, Box::new(left_opt), Box::new(right_opt));
+                Ok(OptExpr::new(expr, complete_use))
+            },
         }
     }
 
-    fn optimize_par(&mut self, inner: Expr) -> Result<Expr, Error> {
+    fn optimize_par(&mut self, inner: Expr) -> Result<OptExpr, Error> {
         // For now, the Par optimization only optimizes the inner expression, and returns it without the parenthesis.
 
-        let inner_opt = self.optimize_expr(inner)?;
+        let inner = self.optimize_expr(inner)?;
 
-        Ok(inner_opt)
+        Ok(inner)
 
         //? We may want to keep the outer parenthesis for the inner expression if it is an operation. In this case, uncomment the following lines:
         // // If the inner part is not an operation, we can remove the parenthesis.
         // // TODO: Check for priority of operations to remove useless parenthesis
+        // let (inner_opt, inner_use) = inner.as_tuple();
         // match inner_opt {
-        //     Expr::BinOp(_, _, _) | Expr::UnOp(_, _) => Ok(Expr::Par(Box::new(inner_opt))), // We keep the parenthesis.
-        //     _ => Ok(inner_opt), // We can remove the parenthesis.
+        //     Expr::BinOp(_, _, _) | Expr::UnOp(_, _) => {
+        //         let expr = Expr::Par(Box::new(inner_opt));
+        //         Ok(OptExpr::new(expr, inner_use))
+        //     }, // We keep the parenthesis.
+        //     _ => Ok(inner), // We can remove the parenthesis.
         // }
     }
 
-    fn optimize_call(&mut self, ident: String, args: Arguments) -> Result<Expr, Error> {
+    fn optimize_call(&mut self, ident: String, args: Arguments) -> Result<OptExpr, Error> {
         // To optimize a function call, we optimize each argument and keep the same function call.
 
         let mut args_opt = vec![];
+        let mut args_use = vec![];
         for arg in args.0.iter() {
-            let arg_opt = self.optimize_expr(arg.clone())?;
+            let (arg_opt, arg_use) = self.optimize_expr(arg.clone())?.as_tuple();
             args_opt.push(arg_opt);
+            args_use.push(arg_use);
         }
 
-        Ok(Expr::Call(ident, Arguments(args_opt)))
+        let final_expr = Expr::Call(ident.clone(), Arguments(args_opt));
+        let mut final_use = ExprUsage::new();
+        final_use.add_func_use(ident);
+        final_use.concatenates_vec(args_use);
+        Ok(OptExpr::new(final_expr, final_use))
     }
 
-    fn optimize_ifthenelse(&mut self, cond: Expr, then_block: Block, else_block: Option<Block>) -> Result<Expr, Error> {
+    fn optimize_ifthenelse(&mut self, cond: Expr, then_block: Block, else_block: Option<Block>) -> Result<OptExpr, Error> {
         // To optimize an if then else, we optimize the condition. If we can get a literal boolean, we can replace the if then else by the corresponding block.
         // We optimize the remaining block(s) as well.
 
-        let cond_opt = self.optimize_expr(cond)?;
+        let (cond_opt, cond_use) = self.optimize_expr(cond)?.as_tuple();
+        let mut final_use = cond_use.clone();
 
         // If the condition is a literal, we can evaluate it and return the corresponding block.
         if let Expr::Lit(Literal::Bool(b)) = cond_opt {
             if b {
                 let expr_to_opti = Expr::Block(then_block);
-                return self.optimize_expr(expr_to_opti);
+                let (block_opt, block_use) = self.optimize_expr(expr_to_opti)?.as_tuple();
+                final_use.concatenate(block_use);
+                return Ok(OptExpr::new(block_opt, final_use));
             } else {
                 if let Some(else_block) = else_block {
                     let expr_to_opti = Expr::Block(else_block);
-                    return self.optimize_expr(expr_to_opti);
+                    let (block_opt, block_use) = self.optimize_expr(expr_to_opti)?.as_tuple();
+                    final_use.concatenate(block_use);
+                    return Ok(OptExpr::new(block_opt, final_use));
                 } else {
-                    return Ok(Expr::get_empty_expr());
+                    return Ok(OptExpr::new(Expr::get_empty_expr(), cond_use));
                 }
             }
         }
         
         // Else, we optimize both blocks and return the if then else with the optimized condition.
-        let then_block_opt = self.optimize_block(then_block)?;
-        let else_block_opt = match else_block {
-            Some(block) => Some(self.optimize_block(block)?),
-            None => None,
+        let (then_block_opt, then_block_use) = self.optimize_block(then_block)?.as_tuple();
+        let (else_block_opt, else_block_use) = match else_block {
+            Some(block) => {
+                let (block_opt, block_use) = self.optimize_block(block)?.as_tuple();
+                (Some(block_opt), block_use)
+            },
+            None => (None, ExprUsage::new()),
         };
 
-        Ok(Expr::IfThenElse(Box::new(cond_opt), then_block_opt, else_block_opt))
+        let expr = Expr::IfThenElse(Box::new(cond_opt), then_block_opt, else_block_opt);
+        final_use.concatenate(then_block_use);
+        final_use.concatenate(else_block_use);
+
+        Ok(OptExpr::new(expr, final_use))
     }
 
     fn post_block_opt_process(&self, block: Block) -> Expr {
@@ -872,11 +960,15 @@ impl Optimizer {
         }
     }
 
-    pub fn optimize_expr(&mut self, expr: Expr) -> Result<Expr, Error> {
+    pub fn optimize_expr(&mut self, expr: Expr) -> Result<OptExpr, Error> {
 
         match expr {
-            Expr::Ident(ident) => Ok(Expr::Ident(ident)), //TODO: Implement identifier optimizations?
-            Expr::Lit(lit) => Ok(Expr::Lit(lit)),
+            Expr::Ident(ident) => {
+                let mut expr_usage = ExprUsage::new();
+                expr_usage.add_var_use(ident.clone());
+                Ok(OptExpr::new(Expr::Ident(ident), expr_usage))
+            },
+            Expr::Lit(lit) => Ok(OptExpr::new(Expr::Lit(lit), ExprUsage::new())),
             Expr::BinOp(binop, left, right) => self.optimize_binop(binop, *left, *right),
             Expr::UnOp(unop, operand) => self.optimize_unop(unop, *operand),
             Expr::Par(inner) => self.optimize_par(*inner),
@@ -885,12 +977,10 @@ impl Optimizer {
                 self.optimize_ifthenelse(*cond, then_block, else_block)
             }
             Expr::Block(block) => {
-                let opt_block = self.optimize_block(block);
+                let (block_opt, block_use) = self.optimize_block(block)?.as_tuple();
 
-                match opt_block {
-                    Ok(b) => Ok(self.post_block_opt_process(b)),
-                    Err(e) => Err(e),
-                }
+                let b = self.post_block_opt_process(block_opt);
+                Ok(OptExpr::new(b, block_use))
             }
         }
     }
@@ -940,7 +1030,7 @@ impl Optimizer {
         })
     }
 
-    fn optimize_statement(&mut self, statement: Statement, last_statement: bool) -> Result<Statement, Error> {
+    fn optimize_statement(&mut self, statement: Statement, last_statement: bool) -> Result<OptStmt, Error> {
         // To optimize a statement, we optimize its different parts
         // If it is useless, we 'remove' it by returning an expr statement which is a literal unit.
         // Last statement allows to avoid removing an assign or an expression while it was the last statement of a block.
@@ -1279,11 +1369,11 @@ impl Optimizer {
         }
     }
 
-    pub fn optimize_block(&mut self, block: Block) -> Result<Block, Error> {
+    pub fn optimize_block(&mut self, block: Block) -> Result<OptBlock, Error> {
         self._optimize_block(block, false)
     }
 
-    fn _optimize_block(&mut self, block: Block, is_main: bool) -> Result<Block, Error> {
+    fn _optimize_block(&mut self, block: Block, is_main: bool) -> Result<OptBlock, Error> {
         // Optimizing blocks should remove any useless statements, and simplify useful ones.
         // If a block does not affect the program, it should be removed.
         // If it returns a simple literal or variable or operation, and the previous statements do not affect the program or anything, it should be replaced by the return value.
