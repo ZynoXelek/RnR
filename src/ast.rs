@@ -13,7 +13,7 @@ pub enum Literal {
     Bool(bool),
     Int(i32),
     String(String),
-    Array(Vec<Literal>, usize), //TODO: Change to Expr rather than Literal?
+    Array(Vec<Literal>, usize), //TODO: Change to Expr rather than Literal? And move to Expr?
     Unit,
 }
 

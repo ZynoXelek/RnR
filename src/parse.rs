@@ -330,6 +330,15 @@ fn parse_operand(input: ParseStream) -> Result<Expr> {
         // To support binary operations with higher priority (For instance, array access)
         let final_operand = parse_binary_op_expr(input, operand, op.priority()).unwrap();
 
+        // Some hotfix on unary operators to make it so that '-4' is parsed as
+        // 'Expr::Lit(Literal::Int(-4))' instead of 'Expr::UnOp(UnOp::Neg, Expr::Lit(Literal::Int(4)))'
+
+        if let UnOp::Neg = op {
+            if let Expr::Lit(Literal::Int(i)) = final_operand {
+                return Ok(Expr::Lit(Literal::Int(-i)));
+            }
+        }
+        
         Ok(Expr::un_op(op, final_operand))
     } else if input.peek(syn::token::Paren) {
         // This should parse expressions in parentheses, such as `(1 + 2)`

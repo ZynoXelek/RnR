@@ -599,6 +599,10 @@ impl Block {
         Block { statements, semi }
     }
 
+    pub fn get_empty_block() -> Block {
+        Block::new(vec![], false)
+    }
+
     // When it is needed to check if a block is a unit type
     pub fn is_unit(&self) -> bool {
         self.statements.is_empty() || self.semi // A block is of unit type if it is empty or ends with a semi colon

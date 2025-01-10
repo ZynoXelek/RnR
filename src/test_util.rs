@@ -79,8 +79,11 @@ where
     T1: Clone + Optimize<T1> + PartialEq + Debug + Display,
 {
     let input_opti = p.optimize();
-    assert!(input_opti.is_ok());
-    let input_opti = input_opti.unwrap();
+    let input_opti = match input_opti {
+        Ok(p) => p,
+        Err(e) => panic!("Optimization failed: {}", e),
+    };
+
     println!("Optimization result for input:\n{}", input_opti);
     println!("Expected optimization result:\n{}", expected);
     assert_eq!(input_opti, expected);
