@@ -441,14 +441,83 @@ mod test_type {
 //?#                                                                                               #
 //?#################################################################################################
 
-//? ------------------------------ Initial Tests from the ast_traits file ------------------------------
+//? ------------------------------ Initial Tests from the ast_traits file, and some new ones as well ------------------------------
 
 #[cfg(test)]
 mod initial_tests {
     use super::*;
     
     #[test]
-    fn display_if_then_else() {
+    fn display_simple_block() {
+        let ts: proc_macro2::TokenStream = "
+        {
+            let a = 3;
+            let b = 4;
+            let c = {
+                a + b
+            };
+            let d = {
+                let e = 5;
+                e
+            };
+            c + d
+        }
+        "
+        .parse()
+        .unwrap();
+        let e: Block = syn::parse2(ts).unwrap();
+        println!("ast:\n{:?}", e);
+    
+        println!("pretty:\n{}", e);
+    }
+    
+    #[test]
+    fn display_simple_block_with_func() {
+        let ts: proc_macro2::TokenStream = "
+        {
+            fn add(a: i32, b: i32) -> i32 {
+                a + b
+            }
+
+            let a = 3;
+            let b = 4;
+            let c = add(a, b);
+            c
+        }
+        "
+        .parse()
+        .unwrap();
+        let e: Block = syn::parse2(ts).unwrap();
+        println!("ast:\n{:?}", e);
+    
+        println!("pretty:\n{}", e);
+    }
+    
+    #[test]
+    fn display_if_then_else_1() {
+        let ts: proc_macro2::TokenStream = "
+        {
+            let a = if b {
+                3
+            } else {
+                4
+            };
+
+            let b = if c { let d = 3; d } else { 4 };
+
+            a + b
+        }
+        "
+        .parse()
+        .unwrap();
+        let e: Block = syn::parse2(ts).unwrap();
+        println!("ast:\n{:?}", e);
+    
+        println!("pretty:\n{}", e);
+    }
+    
+    #[test]
+    fn display_if_then_else_2() {
         let ts: proc_macro2::TokenStream = "
         if a {
             let a : i32 = false;
@@ -470,6 +539,41 @@ mod initial_tests {
     }
     
     #[test]
+    fn display_if_then_else_if_1() {
+        let ts: proc_macro2::TokenStream = "
+        if a {1} else if b {2} else {3}
+        "
+        .parse()
+        .unwrap();
+        let e: Expr = syn::parse2(ts).unwrap();
+        println!("ast:\n{:?}", e);
+    
+        println!("pretty:\n{}", e);
+    }
+    
+    #[test]
+    fn display_if_then_else_if_2() {
+        let ts: proc_macro2::TokenStream = "
+        if a {
+            let d = 3;
+            f(d)
+        } else if b {
+            if c > 10 { f(8) } else { f(11) }
+        } else if c {
+            if c < 4 { f(5) }
+        } else {
+            f(2)
+        }
+        "
+        .parse()
+        .unwrap();
+        let e: Expr = syn::parse2(ts).unwrap();
+        println!("ast:\n{:?}", e);
+    
+        println!("pretty:\n{}", e);
+    }
+    
+    #[test]
     fn display_while() {
         let ts: proc_macro2::TokenStream = "
         while a == 9 {
@@ -479,6 +583,29 @@ mod initial_tests {
         .parse()
         .unwrap();
         let e: Statement = syn::parse2(ts).unwrap();
+        println!("ast:\n{:?}", e);
+    
+        println!("pretty:\n{}", e);
+    }
+    
+    #[test]
+    fn display_while_in_block() {
+        let ts: proc_macro2::TokenStream = "
+        {
+            let mut a = 3;
+            while a != 9 {
+                if a > 9 {
+                    a = 9;
+                } else {
+                    a = a + 1;
+                }
+            }
+            a
+        }
+        "
+        .parse()
+        .unwrap();
+        let e: Block = syn::parse2(ts).unwrap();
         println!("ast:\n{:?}", e);
     
         println!("pretty:\n{}", e);

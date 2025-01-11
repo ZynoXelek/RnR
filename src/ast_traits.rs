@@ -7,7 +7,7 @@ use std::fmt;
 
 //? ------------ Helper method to get the string of the desired number of tabs ------------
 
-const TAB: &str = "    "; // Can be "\t" or "    " (4 spaces, it looks better in the terminal)
+const TAB: &str = "    "; // Can be "\t" or "    " (4 spaces, it looks better in the terminal) or "." for debug purposes
 
 fn get_tabs(nb_tabs: usize) -> String {
     let mut tabs = String::new();
@@ -33,7 +33,7 @@ impl<T: Into<Literal>> From<T> for Type {
             Literal::Int(_) => Type::I32,
             Literal::String(_) => Type::String,
             Literal::Array(arr, size) => Type::Array(Box::new(Type::from(arr[0].clone())), size),
-            _ => unimplemented!("Type::from for {:?}", lit),
+            // _ => unimplemented!("Type::from for {:?}", lit),
         }
     }
 }
@@ -95,7 +95,7 @@ impl fmt::Display for Type {
             Type::Unit => write!(f, "()"),
             Type::Array(ty, size) => write!(f, "[{}; {}]", ty, size),
             Type::GenericArray => write!(f, "[_; _]"), // Not for use, only for display
-            _ => unimplemented!("Type::fmt for {:?}", self),
+            // _ => unimplemented!("Type::fmt for {:?}", self),
         }
     }
 }
@@ -248,7 +248,7 @@ impl fmt::Display for Literal {
                 write!(f, "]")
             }
             Literal::Unit => write!(f, "()"),
-            _ => unimplemented!("Literal::fmt for {:?}", self),
+            // _ => unimplemented!("Literal::fmt for {:?}", self),
         }
     }
 }
@@ -286,13 +286,10 @@ impl Expr {
     }
 
     // When it is needed to check if an expression is a unit type
-    // Will be moved to the type checker
     pub fn is_unit(&self) -> bool {
         match self {
-            //TODO: Identifier can be of unit type?
             Expr::Lit(l) => l.is_unit(),
             Expr::Par(e) => e.is_unit(),
-            //TODO: Call can be, but need to check return type. How to access function definition?
             Expr::IfThenElse(_, then_block, else_block) => {
                 // Both blocks should be of the same type, but not verified yet. (Will be in the type checker)
                 then_block.is_unit()
@@ -302,15 +299,67 @@ impl Expr {
                     }
             }
             Expr::Block(b) => b.is_unit(),
+            _ => false, // The type checker verifies the other cases in its vm
+        }
+    }
+
+    // Made to check if an expression is an if-then-else_if version
+    fn is_expr_if_then_else_if(&self) -> bool {
+        match self {
+            Expr::IfThenElse(cond, then_block, else_block) => match else_block {
+                Some(else_block) => {
+                    if else_block.statements.len() == 1 {
+                        if let Statement::Expr(Expr::IfThenElse(cond, then_block, else_block)) =
+                            &else_block.statements[0]
+                        {
+                            return true;
+                        } else {
+                            return false;
+                        }
+                    } else {
+                        return false;
+                    }
+                }
+                None => false,
+            },
             _ => false,
         }
     }
 
+    // This function is used to check whether an expression requires multiple lines to be displayed
+    fn requires_multiple_lines(&self) -> bool {
+        match self {
+            Expr::Lit(_) => false,
+            Expr::Ident(_) => false,
+            Expr::BinOp(_, left, right) => {
+                left.requires_multiple_lines() || right.requires_multiple_lines()
+            }
+            Expr::UnOp(_, operand) => operand.requires_multiple_lines(),
+            Expr::Par(e) => e.requires_multiple_lines(),
+            Expr::Call(_, args) => args.0.iter().any(|arg| arg.requires_multiple_lines()),
+            Expr::IfThenElse(cond, then_block, else_block) => {
+                self.is_expr_if_then_else_if() // Two conditions are too many to put on the same line
+                    || cond.requires_multiple_lines()
+                    || then_block.requires_multiple_lines()
+                    || match else_block {
+                        // If both then and else are 1 line only, we can put them on the same line
+                        Some(block) => block.requires_multiple_lines(),
+                        None => false,
+                    }
+            }
+            Expr::Block(block) => block.requires_multiple_lines(),
+        }
+    }
+
     fn get_string_repr(&self, indent: usize) -> String {
+        self._get_string_repr_with_param(indent, false, 0)
+    }
+
+    fn _get_string_repr_with_param(&self, indent: usize, force_multiline: bool, first_indent: usize) -> String {
         // Gets the string representation of the expression with the desired number of tabs
         let mut s = String::new();
-        let tabs = get_tabs(indent);
-
+        
+        let tabs = get_tabs(first_indent);
         s.push_str(&tabs);
 
         let mut expr_repr = String::new();
@@ -320,27 +369,52 @@ impl Expr {
             Expr::Lit(l) => expr_repr.push_str(&format!("{}", l)),
             Expr::BinOp(op, left, right) => match op {
                 BinOp::Get => {
-                    expr_repr.push_str(&format!("{}[{}]", left, right));
+                    expr_repr.push_str(&format!("{}[{}]", left.get_string_repr(indent), right.get_string_repr(indent)));
                 }
-                _ => expr_repr.push_str(&format!("{} {} {}", left, op, right)),
+                _ => expr_repr.push_str(&format!("{} {} {}", left.get_string_repr(indent), op, right.get_string_repr(indent))),
             },
-            Expr::UnOp(op, operand) => expr_repr.push_str(&format!("{}{}", op, operand)),
-            Expr::Par(e) => expr_repr.push_str(&format!("({})", e)),
-            Expr::Call(id, args) => expr_repr.push_str(&format!("{}{}", id, args)),
+            Expr::UnOp(op, operand) => expr_repr.push_str(&format!("{}{}", op, operand.get_string_repr(indent))),
+            Expr::Par(e) => expr_repr.push_str(&format!("({})", e.get_string_repr(indent))),
+            Expr::Call(id, args) => expr_repr.push_str(&format!("{}{}", id, args.get_string_repr(indent))),
             Expr::IfThenElse(cond, then_block, else_block) => {
+                let multiline = self.requires_multiple_lines() || force_multiline;
+
                 expr_repr.push_str(&format!(
                     "if {} {}",
-                    cond,
-                    then_block.get_string_repr(indent)
+                    cond.get_string_repr(indent),
+                    then_block._get_string_repr_with_param(indent, multiline)
                 ));
+
                 if let Some(else_block) = else_block {
-                    expr_repr.push_str(&format!(" else {}", else_block.get_string_repr(indent)));
+                    // This display supports if-then-else_if versions
+
+                    if else_block.statements.len() == 1 {
+                        if let Statement::Expr(Expr::IfThenElse(cond, then_block, else_block)) =
+                            &else_block.statements[0]
+                        {
+                            let second_if_expr = Expr::IfThenElse(
+                                cond.clone(),
+                                then_block.clone(),
+                                else_block.clone(),
+                            );
+                            expr_repr.push_str(&format!(
+                                " else {}",
+                                second_if_expr._get_string_repr_with_param(indent, multiline, 0)
+                            ));
+                        } else {
+                            expr_repr
+                                .push_str(&format!(" else {}", else_block._get_string_repr_with_param(indent, multiline)));
+                        }
+                    } else {
+                        expr_repr
+                            .push_str(&format!(" else {}", else_block._get_string_repr_with_param(indent, multiline)));
+                    }
                 }
             }
             Expr::Block(block) => {
-                expr_repr.push_str(&format!("{}", block.get_string_repr(indent + 1)))
+                expr_repr.push_str(&format!("{}", block.get_string_repr(indent)))
             }
-            _ => unimplemented!("Expr::fmt for {:?}", self),
+            // _ => unimplemented!("Expr::fmt for {:?}", self),
         }
 
         s.push_str(&expr_repr);
@@ -389,7 +463,7 @@ impl BinOp {
             BinOp::Le => 3,
             // Array operations
             BinOp::Get => 8, // Highest priority (above unary operators as well)
-            _ => unimplemented!("BinOp::priority for {:?}", self),
+            // _ => unimplemented!("BinOp::priority for {:?}", self),
         }
     }
 
@@ -418,7 +492,7 @@ impl fmt::Display for BinOp {
             BinOp::Le => "<=",
             BinOp::Ge => ">=",
             BinOp::Get => "[]", // Not made to be used, since the binary operation will be responsible of correctly displaying it
-            _ => unimplemented!("BinOp::fmt for {:?}", self),
+            // _ => unimplemented!("BinOp::fmt for {:?}", self),
         };
         write!(f, "{}", s)
     }
@@ -437,7 +511,7 @@ impl UnOp {
         match self {
             UnOp::Neg => 7,
             UnOp::Bang => 7,
-            _ => unimplemented!("UnOp::priority for {:?}", self),
+            // _ => unimplemented!("UnOp::priority for {:?}", self),
         }
     }
 }
@@ -447,7 +521,7 @@ impl fmt::Display for UnOp {
         match self {
             UnOp::Neg => write!(f, "-"),
             UnOp::Bang => write!(f, "!"),
-            _ => unimplemented!("UnOp::fmt for {:?}", self),
+            // _ => unimplemented!("UnOp::fmt for {:?}", self),
         }
     }
 }
@@ -496,15 +570,13 @@ impl Statement {
             Statement::Let(_, _, _, _) => true,
             Statement::Assign(_, _) => true,
             Statement::While(_, _) => false,
-            Statement::Expr(expr) => {
-                match expr {
-                    Expr::IfThenElse(_, _, _) => false,
-                    Expr::Block(_) => false,
-                    _ => true,
-                }
+            Statement::Expr(expr) => match expr {
+                Expr::IfThenElse(_, _, _) => false,
+                Expr::Block(_) => false,
+                _ => true,
             },
             Statement::Fn(_) => false,
-            _ => unimplemented!("Statement::requires_semi_colon for {:?}", self),
+            // _ => unimplemented!("Statement::requires_semi_colon for {:?}", self),
         }
     }
 
@@ -516,7 +588,25 @@ impl Statement {
             Statement::While(_, _) => true,
             Statement::Expr(_) => true,
             Statement::Fn(_) => true,
-            _ => unimplemented!("Statement::can_terminate_block for {:?}", self),
+            // _ => unimplemented!("Statement::can_terminate_block for {:?}", self),
+        }
+    }
+
+    // This function is used to check whether a statement requires multiple lines to be displayed
+    fn requires_multiple_lines(&self) -> bool {
+        match self {
+            Statement::Let(_, _, _, expr) => match expr {
+                Some(e) => e.requires_multiple_lines(),
+                None => false,
+            },
+            Statement::Assign(left, right) => {
+                left.requires_multiple_lines() || right.requires_multiple_lines()
+            }
+            //In case we want to have some single line whiles: cond.requires_multiple_lines() || block.requires_multiple_lines(),
+            Statement::While(cond, block) => true,
+            Statement::Expr(expr) => expr.requires_multiple_lines(),
+            // In case we want to have some single line func declaration: fn_decl.body.requires_multiple_lines(),
+            Statement::Fn(fn_decl) => true,
         }
     }
 
@@ -526,34 +616,35 @@ impl Statement {
         let tabs = get_tabs(indent);
 
         let mut stmt_repr = String::new();
+        stmt_repr.push_str(&tabs);
 
         match self {
             Statement::Let(m, id, ty, expr) => {
-                stmt_repr.push_str(&tabs);
                 stmt_repr.push_str(&format!("let {}{}", m, id));
                 if let Some(t) = ty {
                     stmt_repr.push_str(&format!(": {}", t));
                 }
                 if let Some(e) = expr {
-                    stmt_repr.push_str(&format!(" = {}", e));
+                    stmt_repr.push_str(&format!(" = {}", e.get_string_repr(indent)));
                 }
             }
             Statement::Assign(left, right) => {
-                stmt_repr.push_str(&tabs);
-                stmt_repr.push_str(&format!("{} = {}", left, right));
+                stmt_repr.push_str(&format!("{} = {}", left.get_string_repr(indent), right.get_string_repr(indent)));
             }
             Statement::While(condition, block) => {
+                let multiline = self.requires_multiple_lines();
+
                 stmt_repr.push_str(&format!(
                     "while {} {}",
-                    condition,
-                    block.get_string_repr(indent)
+                    condition.get_string_repr(indent),
+                    block._get_string_repr_with_param(indent, multiline)
                 ));
             }
             Statement::Expr(expr) => {
                 stmt_repr.push_str(&format!("{}", expr.get_string_repr(indent)));
             }
             Statement::Fn(fn_decl) => {
-                stmt_repr.push_str(&format!("{}", fn_decl.get_string_repr(indent)));
+                stmt_repr.push_str(&format!("{}", fn_decl.get_string_repr(indent, 0)));
             }
         }
 
@@ -608,30 +699,77 @@ impl Block {
         self.statements.is_empty() || self.semi // A block is of unit type if it is empty or ends with a semi colon
     }
 
+    // This function is used to check whether a block requires multiple lines to be displayed
+    fn requires_multiple_lines(&self) -> bool {
+        // Unit type blocks will be displayed on multiple lines rather than a single line
+        // Avoid { a = 2; }
+        // For
+        // {
+        //     a = 2;
+        // }
+        if self.statements.len() > 1 || self.semi {
+            true
+        } else {
+            match self.statements.first() {
+                Some(stmt) => stmt.requires_multiple_lines(),
+                None => false,
+            }
+        }
+    }
+
     fn get_string_repr(&self, indent: usize) -> String {
+        self._get_string_repr_with_param(indent, false)
+    }
+
+    fn _get_string_repr_with_param(&self, indent: usize, force_multiline: bool) -> String {
         // Gets the string representation of the block with the desired number of tabs
 
         let mut s = String::new();
-        let tabs = get_tabs(indent);
 
         // Blocks start at the same indent level as the block itself, so no need to add a tab at the beginning
         // However, the last line of the block which close the brackets should be added tabs to correctly align it with the block
 
         let mut block_repr = String::new();
 
-        block_repr.push_str(&"{\n");
-        for index in 0..self.statements.len() {
-            block_repr.push_str(&format!(
-                "{}",
-                self.statements[index].get_string_repr(indent + 1)
-            ));
-            if index < self.statements.len() - 1 || self.semi {
+        let multiline = self.requires_multiple_lines() || force_multiline;
+
+        block_repr.push_str(&"{");
+
+        let indent = if multiline { indent } else { 0 };
+        let inner_ident = if multiline { indent + 1 } else { 0 };
+
+        if multiline {
+            block_repr.push_str(&"\n");
+        } else {
+            block_repr.push_str(&" ");
+        }
+
+        let tabs = get_tabs(indent);
+
+        let nb_stmts = self.statements.len();
+        for index in 0..nb_stmts {
+            let stmt = &self.statements[index];
+
+            block_repr.push_str(&format!("{}", stmt.get_string_repr(inner_ident)));
+
+            let last_statement = index == nb_stmts - 1;
+
+            // Avoid adding a semi-colon to if, while, fn, and block statements
+            let should_add_semi = (!last_statement || self.semi) && stmt.requires_semi_colon();
+
+            if should_add_semi {
                 block_repr.push_str(&";");
             }
 
-            block_repr.push_str(&"\n");
+            if !last_statement || multiline {
+                block_repr.push_str(&"\n");
+            } else {
+                block_repr.push_str(&" ");
+            }
         }
-        block_repr.push_str(&tabs);
+        if multiline {
+            block_repr.push_str(&tabs);
+        }
         block_repr.push_str(&"}");
 
         s.push_str(&block_repr);
@@ -700,19 +838,36 @@ impl Arguments {
     pub fn new(args: Vec<Expr>) -> Self {
         Arguments(args)
     }
+
+    fn get_string_repr(&self, indent: usize) -> String {
+        // Gets the string representation of the arguments with the desired number of tabs
+        let mut s = String::new();
+
+        let mut args_repr = String::new();
+
+        // TODO: Improve display for blocks in arguments
+
+        args_repr.push_str(&format!("("));
+
+        let nb_args = self.0.len();
+        for index in 0..nb_args {
+            if index < nb_args - 1 {
+                args_repr.push_str(&format!("{}, ", self.0[index].get_string_repr(indent)));
+            } else {
+                args_repr.push_str(&format!("{}", self.0[index].get_string_repr(indent)));
+            }
+        }
+        args_repr.push_str(&format!(")"));
+
+        s.push_str(&args_repr);
+
+        s
+    }
 }
 
 impl fmt::Display for Arguments {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "(")?;
-        for index in 0..self.0.len() {
-            if index < self.0.len() - 1 {
-                write!(f, "{}, ", self.0[index])?;
-            } else {
-                write!(f, "{}", self.0[index])?;
-            }
-        }
-        write!(f, ")")
+        write!(f, "{}", self.get_string_repr(0))
     }
 }
 
@@ -761,11 +916,13 @@ impl FnDeclaration {
         s
     }
 
-    fn get_string_repr(&self, indent: usize) -> String {
+    fn get_string_repr(&self, indent: usize, signature_indent: usize) -> String {
         // Gets the string representation of the function declaration with the desired number of tabs
 
-        let mut fn_repr = self.get_signature_repr(indent);
-        fn_repr.push_str(&format!(" {}", self.body.get_string_repr(indent)));
+        let multiline = Statement::Fn(self.clone()).requires_multiple_lines();
+
+        let mut fn_repr = self.get_signature_repr(signature_indent);
+        fn_repr.push_str(&format!(" {}", self.body._get_string_repr_with_param(indent, multiline)));
 
         fn_repr
     }
@@ -773,7 +930,7 @@ impl FnDeclaration {
 
 impl fmt::Display for FnDeclaration {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{}", self.get_string_repr(0))
+        write!(f, "{}", self.get_string_repr(0, 0))
     }
 }
 
