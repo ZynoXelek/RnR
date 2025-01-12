@@ -1023,9 +1023,7 @@ pub mod test_optimize {
             assert_optimize(&block, expected);
         }
 
-        // TODO: Fix this
         #[test]
-        #[ignore = "Function calls not yet correctly handled"]
         fn test_useless_functions_removal() {
             let block: Block = parse(
                 "
@@ -1544,7 +1542,6 @@ pub mod test_optimize {
         }
 
         #[test]
-        #[ignore = "Recursion not yet supported -> will result in an infinite loop"]
         fn test_useless_recursive_function() {
             let block: Block = parse(
                 "
@@ -1576,7 +1573,6 @@ pub mod test_optimize {
         }
 
         #[test]
-        #[ignore = "Recursion not yet supported -> will result in an infinite loop"]
         fn test_useless_mutually_recursive_functions() {
             let block: Block = parse(
                 "
@@ -1616,7 +1612,6 @@ pub mod test_optimize {
         }
 
         #[test]
-        #[ignore = "Recursion not yet supported -> will result in an infinite loop"]
         fn test_useful_recursive_function() {
             let block: Block = parse(
                 "
@@ -1641,7 +1636,6 @@ pub mod test_optimize {
         }
 
         #[test]
-        #[ignore = "Recursion not yet supported -> will result in an infinite loop"]
         fn test_useful_mutually_recursive_functions() {
             let block: Block = parse(
                 "
@@ -1681,6 +1675,31 @@ pub mod test_optimize {
         use super::*;
 
         #[test]
+        fn test_useless_prog_opti() {
+            let prog: Prog = parse(
+                "
+                fn main() {
+                    let a = 1; // Should be optimized out because it is never used
+                    let a = 3;
+                    let b;
+                    1 + 3; // Should be optimized out
+                    b = a + 4;
+
+                    // No print nor anything so variables are not used
+                }
+                ",
+            );
+            let expected: Prog = parse(
+                "
+                fn main() {
+                
+                }
+                ",
+            );
+            assert_optimize(&prog, expected);
+        }
+
+        #[test]
         fn test_prog_opti_1() {
             let prog: Prog = parse(
                 "
@@ -1689,8 +1708,9 @@ pub mod test_optimize {
                     let a = 3;
                     let b;
                     1 + 3; // Should be optimized out
-                    f(2); // Should be optimized out
                     b = a + 4;
+
+                    println!(\"{}\", b); // b is used thanks to this
                 }
                 ",
             );
@@ -1700,6 +1720,8 @@ pub mod test_optimize {
                     let a = 3;
                     let b;
                     b = a + 4;
+
+                    println!(\"{}\", b);
                 }
                 ",
             );
@@ -1720,6 +1742,8 @@ pub mod test_optimize {
                         1 + a; // Should be optimized out
                         a + 3
                     };
+
+                    println!(\"{}\", b); // b is used thanks to this
                 }
                 ",
             );
@@ -1728,13 +1752,14 @@ pub mod test_optimize {
                 fn main() {
                     let a = 4;
                     let b = a + 3;
+
+                    println!(\"{}\", b);
                 }
                 ",
             );
             assert_optimize(&prog, expected);
         }
 
-        // TODO
         #[test]
         fn test_prog_not_used_functions() {
             let prog: Prog = parse(
@@ -1754,6 +1779,7 @@ pub mod test_optimize {
                 // main can never be optimized out
                 fn main() {
                     let a = dummy(3);
+                    println!(\"{}\", a);
                 }
                 ",
             );
@@ -1770,6 +1796,59 @@ pub mod test_optimize {
                 // main can never be optimized out
                 fn main() {
                     let a = dummy(3);
+                    println!(\"{}\", a);
+                }
+                ",
+            );
+            assert_optimize(&prog, expected);
+        }
+
+        #[test]
+        fn test_prog_opti_3() {
+            let prog: Prog = parse(
+                "
+                fn main() {
+                    let a = 3;
+
+                    while a < 10 {
+                        a = a + 1;
+                        println!(\"a = {}\", a); // Should not be removed
+                    }
+
+                    let b = {
+                        println!(\"{}\", 3 * 10 + a); // Should not be optimized out
+                        3 * 10 + a / 5
+                    };
+
+                    {
+                        1 + 2;
+                        println!(\"This is a message\");
+                    } // Should not be optimized out
+
+                    println!(\"b = {}\", b); // Should not be removed
+                }
+                ",
+            );
+            let expected: Prog = parse(
+                "
+                fn main() {
+                    let a = 3;
+
+                    while a < 10 {
+                        a = a + 1;
+                        println!(\"a = {}\", a);
+                    }
+
+                    let b = {
+                        println!(\"{}\", 30 + a);
+                        30 + a / 5
+                    };
+
+                    {
+                        println!(\"This is a message\");
+                    }
+
+                    println!(\"b = {}\", b);
                 }
                 ",
             );

@@ -4,10 +4,10 @@ use std::collections::HashMap;
 use crate::ast::{
     Arguments, BinOp, Block, Expr, FnDeclaration, Literal, Parameters, Prog, Statement, Type, UnOp,
 };
-use crate::vm::Val;
 use crate::common::Optimize;
 use crate::error::Error; //TODO: use custom error
 use crate::intrinsics::*;
+use crate::vm::Val;
 
 //?#################################################################################################
 //?#                                                                                               #
@@ -20,7 +20,7 @@ pub type Uses = usize;
 // Scope identifier to be able to correctly locate the variable or function in the scopes
 #[derive(Clone, Debug, Hash, Eq, PartialEq)]
 pub struct Sid {
-    name: String, // The name of the var/func
+    name: String,    // The name of the var/func
     scope_id: usize, // The id of the scope where it is defined
 }
 
@@ -42,23 +42,32 @@ impl Sid {
     }
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct ScopeFn {
     uses: Uses,
     fn_decl: FnDeclaration,
+    call_usage: SimpleExprUsage,
 }
 
 impl ScopeFn {
-    pub fn new(uses: Uses, fn_decl: FnDeclaration) -> Self {
-        Self { uses, fn_decl }
+    pub fn new(uses: Uses, fn_decl: FnDeclaration, call_usage: SimpleExprUsage) -> Self {
+        Self {
+            uses,
+            fn_decl,
+            call_usage,
+        }
     }
 
     pub fn get_uses(&self) -> Uses {
         self.uses
     }
 
-    pub fn get_fn_decl(&self) -> &FnDeclaration {
-        &self.fn_decl
+    pub fn get_fn_decl(&self) -> FnDeclaration {
+        self.fn_decl.clone()
+    }
+
+    pub fn get_call_usage(&self) -> SimpleExprUsage {
+        self.call_usage.clone()
     }
 
     pub fn use_fn(&mut self) {
@@ -81,7 +90,7 @@ impl ScopeFn {
 #[derive(Clone, Debug)]
 pub struct Scope {
     functions: HashMap<String, ScopeFn>, // Tracks the defined functions and their number of uses
-    vars: HashMap<String, Uses>,      // Tracks the defined variables and their number of uses
+    vars: HashMap<String, Uses>,         // Tracks the defined variables and their number of uses
 }
 
 impl Scope {
@@ -93,7 +102,7 @@ impl Scope {
     }
 
     //* Variables
-    
+
     pub fn define_var(&mut self, var: String) {
         if let Some(uses) = self.vars.get_mut(&var) {
             *uses = 0; // We redefine the variable, it has therefore not be used yet.
@@ -146,12 +155,23 @@ impl Scope {
 
     //* Functions
 
-    pub fn define_func(&mut self, fn_decl: FnDeclaration) {
+    pub fn define_func(&mut self, fn_decl: FnDeclaration, call_usage: SimpleExprUsage) {
         let fn_name = fn_decl.id.clone();
         if let Some(uses) = self.functions.get_mut(&fn_name) {
             unreachable!("Function {} is already defined", fn_name); // Unreachable since the type checker will have already checked it.
         } else {
-            self.functions.insert(fn_name, ScopeFn::new(0, fn_decl));
+            self.functions
+                .insert(fn_name, ScopeFn::new(0, fn_decl, call_usage));
+        }
+    }
+
+    pub fn modify_func(&mut self, new_fn_decl: FnDeclaration, new_call_usage: SimpleExprUsage) {
+        let fn_name = new_fn_decl.id.clone();
+        if let Some(scope_fn) = self.functions.get_mut(&fn_name) {
+            scope_fn.fn_decl = new_fn_decl;
+            scope_fn.call_usage = new_call_usage;
+        } else {
+            unreachable!("Function {} is not defined", fn_name);
         }
     }
 
@@ -175,7 +195,7 @@ impl Scope {
         }
     }
 
-    pub fn get_func_decl(&self, fn_name: &str) -> &FnDeclaration {
+    pub fn get_func_decl(&self, fn_name: &str) -> FnDeclaration {
         if let Some(scope_fn) = self.functions.get(fn_name) {
             scope_fn.get_fn_decl()
         } else {
@@ -188,7 +208,10 @@ impl Scope {
             scope_fn.use_fn_multiple(uses);
         } else {
             // Only works for already defined functions
-            unreachable!("Function {} is not defined -> can't infer function declaration", fn_name);
+            unreachable!(
+                "Function {} is not defined -> can't infer function declaration",
+                fn_name
+            );
         }
     }
 
@@ -369,6 +392,12 @@ impl SimpleExprUsage {
         }
     }
 
+    fn remove_func(&mut self, func: &Sid) {
+        if let Some(_) = self.funcs.get(func) {
+            self.funcs.remove(func);
+        }
+    }
+
     fn add_assigned_var(&mut self, var: &Sid) {
         // Avoid duplicates
         if !self.assigned_vars.contains(var) {
@@ -408,9 +437,13 @@ struct BlockUsage {
 
 impl BlockUsage {
     fn new(return_usage: SimpleExprUsage, scope_id: usize, stmts_usage: Vec<StmtUsage>) -> Self {
-        Self { return_usage, scope_id, stmts_usage }
+        Self {
+            return_usage,
+            scope_id,
+            stmts_usage,
+        }
     }
-    
+
     fn new_empty(scope_id: usize) -> Self {
         Self {
             return_usage: SimpleExprUsage::new(),
@@ -422,17 +455,21 @@ impl BlockUsage {
     fn as_simple_usage(&self) -> SimpleExprUsage {
         self.return_usage.clone()
     }
+    
+    fn uses_intrinsics(&self) -> bool {
+        self.stmts_usage.iter().any(|stmt| stmt.detailed.uses_intrinsics())
+    }
 }
 
 #[derive(Clone, Debug, PartialEq)]
 enum DetailedExprUsage {
-    Generic(SimpleExprUsage), // Ident, Lit
+    Generic(SimpleExprUsage),                              // Ident, Lit
     BinOp(Box<DetailedExprUsage>, Box<DetailedExprUsage>), // BinOp
-    UnOp(Box<DetailedExprUsage>), // UnOp
-    Par(Box<DetailedExprUsage>), // Par
-    Call(Sid, Vec<DetailedExprUsage>, Box<DetailedExprUsage>), // Call: func sid to identify the function + call usage
+    UnOp(Box<DetailedExprUsage>),                          // UnOp
+    Par(Box<DetailedExprUsage>),                           // Par
+    Call(Sid, Vec<DetailedExprUsage>, SimpleExprUsage), // Call: func sid to identify the function + call usage
     IfThenElse(Box<DetailedExprUsage>, BlockUsage, Option<BlockUsage>), // IfThenElse
-    Block(BlockUsage), // Block
+    Block(BlockUsage),                                  // Block
 }
 
 impl DetailedExprUsage {
@@ -454,16 +491,43 @@ impl DetailedExprUsage {
         Self::Par(Box::new(expr))
     }
 
-    fn new_call(func: Sid, args: Vec<DetailedExprUsage>, call_use: DetailedExprUsage) -> Self {
-        Self::Call(func, args, Box::new(call_use))
+    fn new_call(func: Sid, args: Vec<DetailedExprUsage>, call_use: SimpleExprUsage) -> Self {
+        Self::Call(func, args, call_use)
     }
 
-    fn new_if_then_else(cond: DetailedExprUsage, then_block: BlockUsage, else_block: Option<BlockUsage>) -> Self {
+    fn new_if_then_else(
+        cond: DetailedExprUsage,
+        then_block: BlockUsage,
+        else_block: Option<BlockUsage>,
+    ) -> Self {
         Self::IfThenElse(Box::new(cond), then_block, else_block)
     }
 
     fn new_block(block: BlockUsage) -> Self {
         Self::Block(block)
+    }
+
+    //? Intrinsics
+
+    fn uses_intrinsics(&self) -> bool {
+        match self {
+            Self::Generic(g_use) => false,
+            Self::BinOp(left, right) => left.uses_intrinsics() || right.uses_intrinsics(),
+            Self::UnOp(expr) => expr.uses_intrinsics(),
+            Self::Par(expr) => expr.uses_intrinsics(),
+            Self::Call(sid, args, _) => {
+                let (func_name, _) = sid.as_tuple();
+                func_name.ends_with("!") || args.iter().any(|arg| arg.uses_intrinsics())
+            }
+            Self::IfThenElse(cond, then_b, else_b) => {
+                cond.uses_intrinsics()
+                    || then_b.uses_intrinsics()
+                    || else_b
+                        .as_ref()
+                        .map_or(false, |else_b| else_b.uses_intrinsics())
+            }
+            Self::Block(block) => block.uses_intrinsics(),
+        }
     }
 
     //? Simplification
@@ -479,7 +543,7 @@ impl DetailedExprUsage {
             Self::UnOp(expr) => expr.as_simple_usage(),
             Self::Par(expr) => expr.as_simple_usage(),
             Self::Call(func, args, func_call) => {
-                let mut g_use = func_call.as_simple_usage();
+                let mut g_use = func_call.clone();
                 for arg in args {
                     g_use.concatenate(arg.as_simple_usage());
                 }
@@ -506,23 +570,31 @@ struct ExprUsage {
 }
 
 impl ExprUsage {
-
     //? Constructors
 
     fn new(detailed: DetailedExprUsage) -> Self {
         let summary = detailed.as_simple_usage();
-        Self { summary, detailed }
+        Self {
+            summary,
+            detailed,
+        }
     }
 
     fn new_empty() -> Self {
         let summary = SimpleExprUsage::new();
         let detailed = DetailedExprUsage::new_generic(summary.clone());
-        Self { summary, detailed }
+        Self {
+            summary,
+            detailed,
+        }
     }
 
     fn new_simple(g_use: SimpleExprUsage) -> Self {
         let detailed = DetailedExprUsage::new_generic(g_use.clone());
-        Self { summary: g_use, detailed }
+        Self {
+            summary: g_use,
+            detailed,
+        }
     }
 
     fn new_unop(expr: ExprUsage) -> Self {
@@ -540,12 +612,20 @@ impl ExprUsage {
         ExprUsage::new(detailed)
     }
 
-    fn new_call(func: Sid, args: Vec<ExprUsage>, call_use: ExprUsage) -> Self {
-        let detailed = DetailedExprUsage::new_call(func, args.iter().map(|arg| arg.detailed.clone()).collect(), call_use.detailed);
+    fn new_call(func: Sid, args: Vec<ExprUsage>, call_use: SimpleExprUsage) -> Self {
+        let detailed = DetailedExprUsage::new_call(
+            func,
+            args.iter().map(|arg| arg.detailed.clone()).collect(),
+            call_use,
+        );
         ExprUsage::new(detailed)
     }
 
-    fn new_if_then_else(cond: ExprUsage, then_block: BlockUsage, else_block: Option<BlockUsage>) -> Self {
+    fn new_if_then_else(
+        cond: ExprUsage,
+        then_block: BlockUsage,
+        else_block: Option<BlockUsage>,
+    ) -> Self {
         let detailed = DetailedExprUsage::new_if_then_else(cond.detailed, then_block, else_block);
         ExprUsage::new(detailed)
     }
@@ -567,6 +647,12 @@ impl ExprUsage {
 
     fn get_assigned_vars(&self) -> Vec<Sid> {
         self.summary.assigned_vars.clone()
+    }
+
+    //? Helper methods
+
+    fn uses_intrinsics(&self) -> bool {
+        self.detailed.uses_intrinsics()
     }
 }
 
@@ -628,7 +714,10 @@ impl OptBlock {
 
 impl From<OptBlock> for OptExpr {
     fn from(opt_block: OptBlock) -> Self {
-        Self::new(Expr::Block(opt_block.block), ExprUsage::from(opt_block.usage))
+        Self::new(
+            Expr::Block(opt_block.block),
+            ExprUsage::from(opt_block.usage),
+        )
     }
 }
 
@@ -638,7 +727,7 @@ impl From<OptBlock> for OptExpr {
 struct SimpleStmtUsage {
     vars: HashMap<Sid, Uses>, // The list of the names of each variable used in the statement (used means read, not written)
     funcs: HashMap<Sid, Uses>, // The list of the names of each function called in the statement
-    assigned_vars: Vec<Sid>, // The name of the variables assigned in the statement
+    assigned_vars: Vec<Sid>,  // The name of the variables assigned in the statement
     modify_current_scope: bool, // Whether the statement modifies a variable from the current scope
     modify_outer_scope: bool, // Whether the statement modifies a variable from an outer scope
     defined_var: Option<Sid>, // The name of the variable defined in the statement if there is one
@@ -766,11 +855,11 @@ impl From<ExprUsage> for SimpleStmtUsage {
 
 #[derive(Clone, Debug, PartialEq)]
 enum DetailedStmtUsage {
-    Let(Sid, Option<ExprUsage>), // Let: var sid + expr usage
+    Let(Sid, Option<ExprUsage>),       // Let: var sid + expr usage
     Assign(Sid, ExprUsage, ExprUsage), // Assign: sid + expr usage + expr usage (left is an expr usage as well for arrays)
-    Expr(ExprUsage), // Expr: expr usage
-    Fn(Sid), // Fn: no usage but function definition
-    While(ExprUsage, BlockUsage), // While: expr usage + block usage
+    Expr(ExprUsage),                   // Expr: expr usage
+    Fn(Sid),                           // Fn: no usage but function definition
+    While(ExprUsage, BlockUsage),      // While: expr usage + block usage
 }
 
 impl DetailedStmtUsage {
@@ -802,12 +891,16 @@ impl DetailedStmtUsage {
                         g_use.remove_one_var_use_and_delete(&var); // May be changed back to the non removing version -> keep var used but with 0 uses
                         Box::new(DetailedExprUsage::new_generic(g_use))
                     }
-                    _ => unreachable!("Left part of an assignation should be a generic expression or a get array"),
+                    _ => unreachable!(
+                        "Left part of an assignation should be a generic expression or a get array"
+                    ),
                 };
 
                 DetailedExprUsage::BinOp(new_left_ident, _right_expr)
             }
-            _ => unreachable!("Left part of an assignation should be a generic expression or a get array"),
+            _ => unreachable!(
+                "Left part of an assignation should be a generic expression or a get array"
+            ),
         };
 
         // Generate the new Left part
@@ -866,12 +959,22 @@ impl DetailedStmtUsage {
                 let mut g_use = SimpleStmtUsage::new();
                 g_use.defined_func = Some(func.clone());
                 g_use
-            },
+            }
             Self::While(cond, block) => {
                 let mut g_use = SimpleStmtUsage::from(cond.clone());
                 g_use.concatenate(SimpleStmtUsage::from(block.as_simple_usage()));
                 g_use
             }
+        }
+    }
+
+    fn uses_intrinsics(&self) -> bool {
+        match self {
+            Self::Let(_, expr) => expr.as_ref().map_or(false, |expr| expr.uses_intrinsics()),
+            Self::Assign(_, left, right) => left.uses_intrinsics() || right.uses_intrinsics(),
+            Self::Expr(expr) => expr.uses_intrinsics(),
+            Self::Fn(_) => false,
+            Self::While(cond, block) => cond.uses_intrinsics() || block.uses_intrinsics(),
         }
     }
 }
@@ -954,10 +1057,16 @@ impl StmtUsage {
     //? Helper method
 
     fn get_subtracted_stmt_usage(&self, other: &StmtUsage) -> StmtUsage {
-        let summary = self.summary.get_subtracted_simple_stmt_usage(&other.summary);
+        let summary = self
+            .summary
+            .get_subtracted_simple_stmt_usage(&other.summary);
         // We don't care about a complex usage for the subtraction
         let detailed = DetailedStmtUsage::new_expr(ExprUsage::new_empty());
         StmtUsage { summary, detailed } // We should not use new() since it uses the detailed usage to generate the summary
+    }
+
+    fn uses_intrinsics(&self) -> bool {
+        self.detailed.uses_intrinsics()
     }
 }
 
@@ -979,7 +1088,10 @@ impl OptStmt {
     }
 
     fn new_empty() -> Self {
-        Self { stmt: Statement::get_empty_statement(), usage: StmtUsage::new_empty() }
+        Self {
+            stmt: Statement::get_empty_statement(),
+            usage: StmtUsage::new_empty(),
+        }
     }
 
     fn get_stmt(&self) -> Statement {
@@ -1039,9 +1151,7 @@ pub struct Optimizer {
 
 impl Optimizer {
     pub fn new() -> Self {
-        Optimizer {
-            scopes: vec![],
-        }
+        Optimizer { scopes: vec![] }
     }
 
     //? Scopes management
@@ -1049,7 +1159,7 @@ impl Optimizer {
     fn add_scope(&mut self) {
         self.scopes.push(Scope::new());
     }
-    
+
     fn remove_scope(&mut self) {
         self.scopes.pop();
     }
@@ -1125,18 +1235,32 @@ impl Optimizer {
         if scope.vars.contains_key(&var_name) {
             scope.revert_var_uses(var_name, uses);
         } else {
-            unreachable!("Trying to revert uses of an undefined variable: {:?}", var); // Unreachable since the type checker will have already checked it.
+            unreachable!("Trying to revert uses of an undefined variable: {:?}", var);
+            // Unreachable since the type checker will have already checked it.
         }
     }
 
     fn define_func(&mut self, fn_decl: FnDeclaration) -> Sid {
         if let Some(scope) = self.scopes.last_mut() {
-            scope.define_func(fn_decl.clone());
+            // On definition, the call_usage is empty
+            // It will be defined and refined then
+            scope.define_func(fn_decl.clone(), SimpleExprUsage::new());
             // Then returns the generated Sid
             self.generate_sid(&fn_decl.id)
         } else {
             unreachable!("No scope to define function {}", fn_decl.id); // Unreachable since the type checker will have already checked it.
         }
+    }
+
+    fn modify_func(
+        &mut self,
+        func: &Sid,
+        new_func_decl: FnDeclaration,
+        new_call_usage: SimpleExprUsage,
+    ) {
+        let (_, scope_id) = func.as_tuple();
+        let scope = self.scopes.get_mut(scope_id).unwrap();
+        scope.modify_func(new_func_decl, new_call_usage);
     }
 
     fn remove_func(&mut self, func: &Sid) {
@@ -1167,12 +1291,23 @@ impl Optimizer {
         }
     }
 
-    fn get_func_decl(&self, func: &Sid) -> Option<&FnDeclaration> {
+    fn get_func_decl(&self, func: &Sid) -> Option<FnDeclaration> {
         let (fn_name, scope_id) = func.as_tuple();
         let scope = self.scopes.get(scope_id)?;
 
         if let Some(scope_fn) = scope.functions.get(&fn_name) {
             Some(scope_fn.get_fn_decl())
+        } else {
+            None // Not defined
+        }
+    }
+
+    fn get_func_call_use(&self, func: &Sid) -> Option<SimpleExprUsage> {
+        let (fn_name, scope_id) = func.as_tuple();
+        let scope = self.scopes.get(scope_id)?;
+
+        if let Some(scope_fn) = scope.functions.get(&fn_name) {
+            Some(scope_fn.get_call_usage())
         } else {
             None // Not defined
         }
@@ -1207,12 +1342,12 @@ impl Optimizer {
         if scope.functions.contains_key(&fn_name) {
             scope.revert_func_uses(fn_name, uses);
         } else {
-            unreachable!("Trying to revert uses of an undefined function: {:?}", func); // Unreachable since the type checker will have already checked it.
+            unreachable!("Trying to revert uses of an undefined function: {:?}", func);
+            // Unreachable since the type checker will have already checked it.
         }
     }
 
     fn apply_stmt_usage(&mut self, stmt_usage: &StmtUsage) {
-
         let used_vars = stmt_usage.get_used_vars();
         let used_funcs = stmt_usage.get_used_funcs();
 
@@ -1221,7 +1356,10 @@ impl Optimizer {
         }
 
         for (func, uses) in used_funcs.iter() {
-            self.use_func_multiple(func, *uses);
+            // Ignore intrinsics
+            if !func.name.ends_with("!") {
+                self.use_func_multiple(func, *uses);
+            }
         }
     }
 
@@ -1241,7 +1379,7 @@ impl Optimizer {
     fn get_current_scope_useless_vars(&self) -> Vec<Sid> {
         let current_scope_id = self.scopes.len() - 1;
         let current_scope = self.scopes.get(current_scope_id).unwrap();
-        
+
         let useless_vars = current_scope.get_unused_vars();
 
         let mut useless_vars_sid = vec![];
@@ -1255,7 +1393,7 @@ impl Optimizer {
     fn get_current_scope_useless_funcs(&self) -> Vec<Sid> {
         let current_scope_id = self.scopes.len() - 1;
         let current_scope = self.scopes.get(current_scope_id).unwrap();
-        
+
         let useless_funcs = current_scope.get_unused_funcs();
 
         let mut useless_funcs_sid = vec![];
@@ -1325,7 +1463,7 @@ impl Optimizer {
             _ => {
                 let expr = Expr::UnOp(unop, Box::new(operand_opt));
                 Ok(OptExpr::new(expr, complete_use))
-            },
+            }
         }
     }
 
@@ -1399,7 +1537,7 @@ impl Optimizer {
             _ => {
                 let expr = Expr::BinOp(binop, Box::new(left_opt), Box::new(right_opt));
                 Ok(OptExpr::new(expr, complete_use))
-            },
+            }
         }
     }
 
@@ -1427,24 +1565,16 @@ impl Optimizer {
         // }
     }
 
-    fn get_call_use(&mut self, func: &Sid) -> ExprUsage {
-        // Get the use of a function call
-        // TODO: Support recursion, and mutual recursions
-        // TODO: Once it is correctly computed once, store it somewhere to avoid recomputing it
-        // TODO: Check if the function called has mutable references in its arguments. (need to implement references then)
-        // -> function may modify its outer scope and therefore be required to be kept (it would be an assignment)
-        
-        let fn_decl = self.get_func_decl(func).unwrap();
-        let (_, block_use) = self._optimize_block(fn_decl.body.clone()).unwrap().as_tuple();
-
-        ExprUsage::from(block_use)
-    }
-
     fn optimize_call(&mut self, ident: String, args: Arguments) -> Result<OptExpr, Error> {
         // To optimize a function call, we optimize each argument and keep the same function call.
         // Then, we use the function call usage to get the final usage of this expression.
 
-        let func_sid = self.get_func_sid(&ident).unwrap();
+        //? Debug
+        // eprintln!(" ------------------------- ");
+        // eprintln!("Optimizing call: {}", ident);
+        // eprintln!("With args:\n{}", args);
+
+        let is_intrinsic = if ident.ends_with(&"!") { true } else { false };
 
         let mut args_opt = vec![];
         let mut args_use = vec![];
@@ -1456,14 +1586,33 @@ impl Optimizer {
 
         let final_expr = Expr::Call(ident.clone(), Arguments(args_opt));
 
+        //? Debug
+        // eprintln!("Final expression is:\n{}", final_expr);
+
         // Adding the function call usage
-        let call_use = ExprUsage::new_empty(); //self.get_call_use(&func_sid);
-        let final_use = ExprUsage::new_call(func_sid, args_use, call_use);
+        let final_use = if !is_intrinsic {
+            let func_sid = self.get_func_sid(&ident).unwrap();
+            let call_use = self.get_func_call_use(&func_sid).unwrap();
+            ExprUsage::new_call(func_sid, args_use, call_use)
+        } else {
+            let intrinsic_sid = Sid::new(ident, 0); // Intrinsic functions are always in the first scope
+            let call_use = SimpleExprUsage::new(); // They do not add any usage except for their arguments
+            ExprUsage::new_call(intrinsic_sid, args_use, call_use)
+        };
+
+        //? Debug
+        // eprintln!("Final usage is:\n{:?}", final_use);
+        // eprintln!(" ------------------------- ");
 
         Ok(OptExpr::new(final_expr, final_use))
     }
 
-    fn optimize_if_then_else(&mut self, cond: Expr, then_block: Block, else_block: Option<Block>) -> Result<OptExpr, Error> {
+    fn optimize_if_then_else(
+        &mut self,
+        cond: Expr,
+        then_block: Block,
+        else_block: Option<Block>,
+    ) -> Result<OptExpr, Error> {
         // To optimize an if then else, we optimize the condition. If we can get a literal boolean, we can replace the if then else by the corresponding block.
         // We optimize the remaining block(s) as well.
 
@@ -1487,14 +1636,14 @@ impl Optimizer {
                 }
             }
         }
-        
+
         // Else, we optimize both blocks and return the if then else with the optimized condition.
         let (then_block_opt, then_block_use) = self._optimize_block(then_block)?.as_tuple();
         let (else_block_opt, else_block_use) = match else_block {
             Some(block) => {
                 let (block_opt, block_use) = self._optimize_block(block)?.as_tuple();
                 (Some(block_opt), Some(block_use))
-            },
+            }
             None => (None, None),
         };
 
@@ -1518,12 +1667,12 @@ impl Optimizer {
                 Statement::Expr(expr) => {
                     let expr_usage = ExprUsage::new_simple(block_usage.as_simple_usage());
                     OptExpr::new(expr, expr_usage)
-                },
+                }
                 Statement::While(_, _) => OptExpr::from(opt_block), // We keep the while loop
                 _ => {
                     let expr = Expr::get_empty_expr(); // We return an empty expression.
                     OptExpr::new(expr, ExprUsage::new_empty())
-                },
+                }
             }
         } else {
             // Else, the block can not be optimized out, so we keep it.
@@ -1532,10 +1681,9 @@ impl Optimizer {
     }
 
     fn _optimize_expr(&mut self, expr: Expr) -> Result<OptExpr, Error> {
-
         match expr {
             Expr::Ident(ident) => {
-                let var_sid = match self.get_var_sid(&ident){
+                let var_sid = match self.get_var_sid(&ident) {
                     Some(sid) => sid,
                     None => return Err(format!("Variable {} not defined", ident)),
                 };
@@ -1544,7 +1692,7 @@ impl Optimizer {
                 simple_usage.add_var_use(&var_sid);
                 let expr_usage = ExprUsage::new_simple(simple_usage);
                 Ok(OptExpr::new(Expr::Ident(ident), expr_usage))
-            },
+            }
             Expr::Lit(lit) => Ok(OptExpr::new(Expr::Lit(lit), ExprUsage::new_empty())),
             Expr::BinOp(binop, left, right) => self.optimize_binop(binop, *left, *right),
             Expr::UnOp(unop, operand) => self.optimize_unop(unop, *operand),
@@ -1588,7 +1736,10 @@ impl Optimizer {
             } else if scope_id == current_scope_id {
                 simple_stmt_usage.modify_current_scope = true;
             } else {
-                unreachable!("ExprUsage with an assigned variable from a non-existing scope: {:?}", assigned_var);
+                unreachable!(
+                    "ExprUsage with an assigned variable from a non-existing scope: {:?}",
+                    assigned_var
+                );
             }
 
             if simple_stmt_usage.modify_current_scope && simple_stmt_usage.modify_outer_scope {
@@ -1599,6 +1750,10 @@ impl Optimizer {
 
     fn update_stmt_usage_booleans(&self, stmt_usage: &mut StmtUsage) {
         // This modifies the given stmt_usage to update its modification booleans
+        if stmt_usage.uses_intrinsics() {
+            // A statement which uses intrinsics is considered modifying its outer scope. It cannot be optimized out.
+            stmt_usage.summary.modify_outer_scope = true;
+        }
         self.update_simple_stmt_usage_booleans(&mut stmt_usage.summary);
     }
 
@@ -1606,7 +1761,7 @@ impl Optimizer {
     // It will have the same functions defined, but variables env reset and ready for checking the function
     fn from_function_call(&mut self, params: &Parameters) -> Optimizer {
         let mut optimizer = Optimizer::new();
-        
+
         // Copy the functions
         let mut new_scopes = self.scopes.clone();
         for scope in new_scopes.iter_mut() {
@@ -1614,7 +1769,9 @@ impl Optimizer {
         }
 
         optimizer.scopes = new_scopes;
-        
+
+        optimizer.add_scope(); // Add a new scope in which we will define the parameters
+
         // Define the parameters
         for param in params.0.iter() {
             optimizer.define_var(param.id.clone());
@@ -1623,32 +1780,48 @@ impl Optimizer {
         optimizer
     }
 
-    fn optimize_fn_declaration(&mut self, fn_decl: FnDeclaration) -> Result<FnDeclaration, Error> {
+    fn optimize_fn_declaration(
+        &mut self,
+        fn_decl: FnDeclaration,
+    ) -> Result<(FnDeclaration, SimpleExprUsage), Error> {
         // To optimize a function declaration, we optimize the block.
 
         // We shall first define every required parameters.
         let mut optimizer = self.from_function_call(&fn_decl.parameters);
 
-        // Main optimization goes through the modified optimization of a block
-        let is_main = fn_decl.id == "main";
+        // Then we can optimize its block, considering that the current function has already been called
+        // To optimize the block correctly, we shall not add a new scope as it has already been created in the new optimizer.
+        let func_called = self.get_func_sid(&fn_decl.id).unwrap();
+        let (block_opt, block_usage) = optimizer
+            ._optimize_block_with_param(fn_decl.body, true)?
+            .as_tuple();
 
-        // Then we can optimize its block
-        let (block_opt, block_usage) = optimizer._optimize_block_with_param(fn_decl.body, is_main)?.as_tuple();
-        // TODO: Do something special in case of an empty block for a function?
+        // TODO: Do something special in case of an empty block for a function? (Except main, it should be kept in every case)
         // -> In this case, if we remove it, we need to identify every statement where it was used to be able
-        //  to correctly update it.
+        //    to correctly update it.
 
-        // TODO: Do something in case of a useless parameter
+        // TODO: Do something in case of a useless parameter?
 
-        Ok(FnDeclaration {
+        let new_fn_decl = FnDeclaration {
             id: fn_decl.id,
             parameters: fn_decl.parameters,
             ty: fn_decl.ty,
             body: block_opt,
-        })
+        };
+
+        let mut func_call_usage = block_usage.return_usage.clone();
+        // We do not add the function itself to the call usage since it will already be done by a Call expression
+        // Moreover, we even remove it to avoid a circular dependency with recursive functions
+        func_call_usage.remove_func(&func_called);
+
+        Ok((new_fn_decl, func_call_usage))
     }
 
-    fn optimize_statement(&mut self, statement: Statement, last_statement: bool) -> Result<OptStmt, Error> {
+    fn optimize_statement(
+        &mut self,
+        statement: Statement,
+        last_statement: bool,
+    ) -> Result<OptStmt, Error> {
         // To optimize a statement, we optimize its different parts
         // If it is useless, we 'remove' it by returning an expr statement which is a literal unit.
         // Last statement allows to avoid removing an assign or an expression while it was the last statement of a block.
@@ -1660,7 +1833,7 @@ impl Optimizer {
                     Some(e) => {
                         let (expr_opt, expr_use) = self._optimize_expr(e)?.as_tuple();
                         (Some(expr_opt), Some(expr_use))
-                    },
+                    }
                     None => (None, None),
                 };
 
@@ -1695,13 +1868,17 @@ impl Optimizer {
 
                 let var_ident = match ident_expr_opt.clone() {
                     Expr::Ident(ident) => ident,
-                    Expr::BinOp(BinOp::Get, left, _) => { // Array case
+                    Expr::BinOp(BinOp::Get, left, _) => {
+                        // Array case
                         if let Expr::Ident(ident) = *left {
                             ident
                         } else {
-                            unreachable!("Trying to assign to a non-ident in array get: {}", ident_expr_opt)
+                            unreachable!(
+                                "Trying to assign to a non-ident in array get: {}",
+                                ident_expr_opt
+                            )
                         }
-                    },
+                    }
                     _ => unreachable!("Trying to assign to a non-ident: {}", ident_expr_opt),
                 };
 
@@ -1735,51 +1912,25 @@ impl Optimizer {
                         let stmt = Statement::Expr(expr_opt); // The expression has already been optimized
                         Ok(OptStmt::new(stmt, stmt_use))
                     } else {
-                        Ok(OptStmt::new(Statement::get_empty_statement(), StmtUsage::new_empty()))
+                        Ok(OptStmt::new(
+                            Statement::get_empty_statement(),
+                            StmtUsage::new_empty(),
+                        ))
                     }
-
-                    //TODO: Remove if unnecessary
-                    // match expr_opt.clone() {
-                    //     Expr::Call(_, _) => {
-                    //         let may_affect_prog: bool = false;
-
-                    //         if may_affect_prog {
-                    //             Ok(Statement::Expr(expr_opt))
-                    //         } else {
-                    //             Ok(Statement::get_empty_statement()) // We return an empty statement.
-                    //         }
-                    //     }
-                    //     Expr::IfThenElse(_, _, _) => Ok(Statement::Expr(expr_opt)),
-                    //     Expr::Block(block) => {
-                    //         // If we have a block, it will have been optimized.
-                    //         // If the block can be removed and replaced by a simple expression, it will be a block with a single statement without a semi-colon.
-                    //         // If the block is useless, it will be empty. Therefore, we can remove it.
-
-                    //         if block.statements.is_empty() {
-                    //             Ok(Statement::get_empty_statement()) // We return an empty statement.
-                    //         } else if block.statements.len() == 1 && !block.semi {
-                    //             match block.statements[0].clone() {
-                    //                 Statement::Expr(expr) => Ok(Statement::Expr(expr)),
-                    //                 _ => Ok(Statement::get_empty_statement()), // We return an empty statement.
-                    //             }
-                    //         } else {
-                    //             // Else, the block can not be optimized out, so we keep it.
-                    //             Ok(Statement::Expr(Expr::Block(block)))
-                    //         }
-                    //     }
-                    //     _ => Ok(Statement::get_empty_statement()), // We return an empty statement.
-                    // }
                 }
             }
             Statement::Fn(fn_decl) => {
-                let opt_fn_decl = self.optimize_fn_declaration(fn_decl.clone())?;
+                // Function declaration optimizations are done before in the block optimization process
+                // Therefore, we simply just have to replace it by the optimized function declaration
 
-                let func = self.generate_sid(&fn_decl.id.as_str());
-                let mut stmt_use = StmtUsage::new_fn(func);
-                self.update_stmt_usage_booleans(&mut stmt_use);
+                // The function has already been defined
+                let func_sid = self.get_func_sid(&fn_decl.id).unwrap();
 
-                Ok(OptStmt::new(Statement::Fn(opt_fn_decl), stmt_use))
-            },
+                let opt_func_decl = self.get_func_decl(&func_sid).unwrap().clone();
+                let stmt_use = StmtUsage::new_fn(func_sid);
+
+                Ok(OptStmt::new(Statement::Fn(opt_func_decl), stmt_use))
+            }
             Statement::While(cond, block) => {
                 // We optimize the block away if the condition can be evaluated to false.
                 let (cond_opt, cond_use) = self._optimize_expr(cond)?.as_tuple();
@@ -1794,7 +1945,7 @@ impl Optimizer {
 
                     let mut stmt_use = StmtUsage::new_while(cond_use, block_use);
                     self.update_stmt_usage_booleans(&mut stmt_use);
-                    
+
                     Ok(OptStmt::new(stmt, stmt_use))
                 }
             }
@@ -1806,7 +1957,7 @@ impl Optimizer {
     //?###################################################################
 
     fn define_block_functions(&mut self, block: &Block) {
-        // This scans the whole block for function definitions 
+        // This scans the whole block for function definitions
 
         for stmt in block.statements.iter() {
             match stmt {
@@ -1815,6 +1966,70 @@ impl Optimizer {
                 }
                 _ => (),
             }
+        }
+    }
+
+    fn optimize_current_block_functions(&mut self, nb_iterations: i32) -> HashMap<String, ScopeFn> {
+        // This gets every defined function in the block, and optimize them
+
+        // This will be used to iterate and be sure we have reached the final optimization
+        let mut optim_copy = self.clone();
+
+        let block_scope_id = self.scopes.len() - 1;
+
+        let functions = self.scopes.get(block_scope_id).unwrap().functions.clone();
+        let mut new_functions = HashMap::new();
+
+        for (fn_name, scope_fn) in functions.iter() {
+            let func_sid = Sid::new(fn_name.clone(), block_scope_id);
+            let func_uses = scope_fn.get_uses();
+
+            let (opt_fn_decl, fn_call_usage) = self
+                .optimize_fn_declaration(scope_fn.get_fn_decl())
+                .unwrap();
+            new_functions.insert(
+                fn_name.clone(),
+                ScopeFn::new(func_uses, opt_fn_decl, fn_call_usage),
+            );
+        }
+
+        //? Debug
+        // eprintln!(" = = = = = = = = = = = = = = = = = = = = = = ");
+        // eprintln!("Initial functions were:");
+        // for (fn_name, scope_fn) in functions.iter() {
+        //     eprintln!(" - {}:", fn_name);
+        //     eprintln!(" | uses: {}", scope_fn.get_uses());
+        //     eprintln!(" | decl: {}", scope_fn.get_fn_decl());
+        //     eprintln!(" | call usage: {:?}", scope_fn.get_call_usage());
+        // }
+        // eprintln!("\nWhile new functions are:");
+        // for (fn_name, scope_fn) in new_functions.iter() {
+        //     eprintln!(" - {}:", fn_name);
+        //     eprintln!(" | uses: {}", scope_fn.get_uses());
+        //     eprintln!(" | decl: {}", scope_fn.get_fn_decl());
+        //     eprintln!(" | call usage: {:?}", scope_fn.get_call_usage());
+        // }
+        // eprintln!(" = = = = = = = = = = = = = = = = = = = = = = ");
+
+        if new_functions == functions {
+            // We have reached the final optimization
+            return functions;
+        } else if nb_iterations > 20 {
+            // We have reached the maximum number of iterations
+            // This should not happen, but if it does, we return the current functions
+            eprintln!("####################################################################################################################");
+            eprintln!("WARNING: Maximum number of iterations reached for block function optimization -> nb_iterations = {}", nb_iterations);
+            eprintln!("####################################################################################################################");
+            return functions;
+        } else {
+            // We have not reached the final optimization, so we need to optimize again
+            // We modify the functions of the initially copied optimizer and iterate
+            for (fn_name, scope_fn) in new_functions.iter() {
+                let fn_sid = Sid::new(fn_name.clone(), block_scope_id);
+                optim_copy.modify_func(&fn_sid, scope_fn.get_fn_decl(), scope_fn.get_call_usage());
+            }
+
+            return optim_copy.optimize_current_block_functions(nb_iterations + 1);
         }
     }
 
@@ -1858,7 +2073,10 @@ impl Optimizer {
             new_opt_stmts.push(new_opt_stmt);
         }
 
-        let (new_stmts, new_stmts_usage): (Vec<Statement>, Vec<StmtUsage>) = new_opt_stmts.into_iter().map(|opt_stmt| opt_stmt.as_tuple()).unzip();
+        let (new_stmts, new_stmts_usage): (Vec<Statement>, Vec<StmtUsage>) = new_opt_stmts
+            .into_iter()
+            .map(|opt_stmt| opt_stmt.as_tuple())
+            .unzip();
 
         let final_block = Block {
             statements: new_stmts,
@@ -1899,7 +2117,10 @@ impl Optimizer {
             match expr {
                 Expr::Ident(_) => {
                     // There cannot be an assignment here so we should not be able to reach this point
-                    unreachable!("Trying to remove an assignment from an identifier: '{}'", expr);
+                    unreachable!(
+                        "Trying to remove an assignment from an identifier: '{}'",
+                        expr
+                    );
                 }
                 Expr::Lit(_) => {
                     // There cannot be an assignment here so we should not be able to reach this point
@@ -1915,12 +2136,24 @@ impl Optimizer {
                             let left_opt_expr = OptExpr::new(*left, left_usage);
                             let right_opt_expr = OptExpr::new(*right, right_usage);
 
-                            let left_opt_expr = self.remove_assign_from_expr(&left_opt_expr, var_to_remove);
-                            let right_opt_expr = self.remove_assign_from_expr(&right_opt_expr, var_to_remove);
+                            let left_opt_expr =
+                                self.remove_assign_from_expr(&left_opt_expr, var_to_remove);
+                            let right_opt_expr =
+                                self.remove_assign_from_expr(&right_opt_expr, var_to_remove);
 
-                            let expr_usage = ExprUsage::new_binop(left_opt_expr.get_usage(), right_opt_expr.get_usage());
-                            OptExpr::new(Expr::BinOp(op, Box::new(left_opt_expr.get_expr()), Box::new(right_opt_expr.get_expr())), expr_usage)
-                        },
+                            let expr_usage = ExprUsage::new_binop(
+                                left_opt_expr.get_usage(),
+                                right_opt_expr.get_usage(),
+                            );
+                            OptExpr::new(
+                                Expr::BinOp(
+                                    op,
+                                    Box::new(left_opt_expr.get_expr()),
+                                    Box::new(right_opt_expr.get_expr()),
+                                ),
+                                expr_usage,
+                            )
+                        }
                         _ => unreachable!("ExprUsage does not match the expression (BinOp)"),
                     }
                 }
@@ -1932,29 +2165,32 @@ impl Optimizer {
 
                             let operand_opt_expr = OptExpr::new(*operand, operand_usage);
 
-                            let operand_opt_expr = self.remove_assign_from_expr(&operand_opt_expr, var_to_remove);
+                            let operand_opt_expr =
+                                self.remove_assign_from_expr(&operand_opt_expr, var_to_remove);
 
                             let expr_usage = ExprUsage::new_unop(operand_opt_expr.get_usage());
-                            OptExpr::new(Expr::UnOp(op, Box::new(operand_opt_expr.get_expr())), expr_usage)
-                        },
+                            OptExpr::new(
+                                Expr::UnOp(op, Box::new(operand_opt_expr.get_expr())),
+                                expr_usage,
+                            )
+                        }
                         _ => unreachable!("ExprUsage does not match the expression (UnOp)"),
                     }
                 }
-                Expr::Par(inner) => {
-                    match used.detailed {
-                        DetailedExprUsage::Par(inner_usage) => {
-                            let inner_usage = ExprUsage::new(*inner_usage);
+                Expr::Par(inner) => match used.detailed {
+                    DetailedExprUsage::Par(inner_usage) => {
+                        let inner_usage = ExprUsage::new(*inner_usage);
 
-                            let inner_opt_expr = OptExpr::new(*inner, inner_usage);
+                        let inner_opt_expr = OptExpr::new(*inner, inner_usage);
 
-                            let inner_opt_expr = self.remove_assign_from_expr(&inner_opt_expr, var_to_remove);
+                        let inner_opt_expr =
+                            self.remove_assign_from_expr(&inner_opt_expr, var_to_remove);
 
-                            let expr_usage = ExprUsage::new_par(inner_opt_expr.get_usage());
-                            OptExpr::new(Expr::Par(Box::new(inner_opt_expr.get_expr())), expr_usage)
-                        },
-                        _ => unreachable!("ExprUsage does not match the expression (Par)"),
+                        let expr_usage = ExprUsage::new_par(inner_opt_expr.get_usage());
+                        OptExpr::new(Expr::Par(Box::new(inner_opt_expr.get_expr())), expr_usage)
                     }
-                }
+                    _ => unreachable!("ExprUsage does not match the expression (Par)"),
+                },
                 Expr::Call(ident, args) => {
                     // Each argument from the call can contain blocks
 
@@ -1963,23 +2199,21 @@ impl Optimizer {
                             let mut new_args = vec![];
                             let mut new_args_usage = vec![];
                             for (arg, arg_usage) in args.0.iter().zip(args_usage.iter()) {
-                                let arg_opt_expr = OptExpr::new(arg.clone(), ExprUsage::new(arg_usage.clone()));
-                                let arg_opt_expr = self.remove_assign_from_expr(&arg_opt_expr, var_to_remove);
+                                let arg_opt_expr =
+                                    OptExpr::new(arg.clone(), ExprUsage::new(arg_usage.clone()));
+                                let arg_opt_expr =
+                                    self.remove_assign_from_expr(&arg_opt_expr, var_to_remove);
                                 new_args.push(arg_opt_expr.get_expr());
                                 new_args_usage.push(arg_opt_expr.get_usage());
                             }
 
                             // We should also consider the function call usage
-                            let func_decl = self.get_func_decl(&func).unwrap();
-                            let call_opt_expr = OptExpr::new(Expr::Block(func_decl.body.clone()), ExprUsage::new(*call_usage));
-                            let new_call_opt_expr = self.remove_assign_from_expr(&call_opt_expr, var_to_remove);
+                            // TODO: Since references are not implemented yet, a function can never modify its arguments outside of its scope
+                            // TODO: To be implemented when references are -> We may have to change the call type to a more Generic
 
-                            // TODO: Do something with the updated block
-                            // TODO: It should be updated for every future function call
-
-                            let expr_usage = ExprUsage::new_call(func, new_args_usage, new_call_opt_expr.get_usage());
+                            let expr_usage = ExprUsage::new_call(func, new_args_usage, call_usage);
                             OptExpr::new(Expr::Call(ident.clone(), Arguments(new_args)), expr_usage)
-                        },
+                        }
                         _ => unreachable!("ExprUsage does not match the expression (Call)"),
                     }
                 }
@@ -1990,10 +2224,12 @@ impl Optimizer {
                     match used.detailed {
                         DetailedExprUsage::IfThenElse(cond_usage, then_usage, else_usage) => {
                             let cond_opt_expr = OptExpr::new(*cond, ExprUsage::new(*cond_usage));
-                            let cond_opt_expr = self.remove_assign_from_expr(&cond_opt_expr, var_to_remove);
+                            let cond_opt_expr =
+                                self.remove_assign_from_expr(&cond_opt_expr, var_to_remove);
 
                             let then_opt_block = OptBlock::new(then_block.clone(), then_usage);
-                            let then_opt_block = self.remove_assign_from_block(&then_opt_block, var_to_remove);
+                            let then_opt_block =
+                                self.remove_assign_from_block(&then_opt_block, var_to_remove);
 
                             let else_opt_block = match else_block {
                                 Some(block) => {
@@ -2002,20 +2238,29 @@ impl Optimizer {
                                         None => unreachable!("Non coherent if-then-else usage: Else block is None while it is Some in the expression")
                                     };
                                     let opt_block = OptBlock::new(block.clone(), else_usage);
-                                    let opt_block = self.remove_assign_from_block(&opt_block, var_to_remove);
+                                    let opt_block =
+                                        self.remove_assign_from_block(&opt_block, var_to_remove);
                                     Some(opt_block)
-                                },
+                                }
                                 None => None,
                             };
-                            let (else_opt_block, else_usage) = else_opt_block.map_or(
-                                (None, None), 
-                                |b| (Some(b.get_block()), Some(b.get_usage()))
-                            );
+                            let (else_opt_block, else_usage) = else_opt_block
+                                .map_or((None, None), |b| {
+                                    (Some(b.get_block()), Some(b.get_usage()))
+                                });
 
-                            let final_expr = Expr::IfThenElse(Box::new(cond_opt_expr.get_expr()), then_opt_block.get_block(), else_opt_block);
-                            let final_usage = ExprUsage::new_if_then_else(cond_opt_expr.get_usage(), then_opt_block.get_usage(), else_usage);
+                            let final_expr = Expr::IfThenElse(
+                                Box::new(cond_opt_expr.get_expr()),
+                                then_opt_block.get_block(),
+                                else_opt_block,
+                            );
+                            let final_usage = ExprUsage::new_if_then_else(
+                                cond_opt_expr.get_usage(),
+                                then_opt_block.get_usage(),
+                                else_usage,
+                            );
                             OptExpr::new(final_expr, final_usage)
-                        },
+                        }
                         _ => unreachable!("ExprUsage does not match the expression (IfThenElse)"),
                     }
                 }
@@ -2023,11 +2268,12 @@ impl Optimizer {
                     match used.detailed {
                         DetailedExprUsage::Block(block_usage) => {
                             let opt_block = OptBlock::new(block.clone(), block_usage);
-                            let opt_block = self.remove_assign_from_block(&opt_block, var_to_remove);
+                            let opt_block =
+                                self.remove_assign_from_block(&opt_block, var_to_remove);
 
                             // Applying the post process on blocks
                             self.post_block_opt_process(opt_block)
-                        },
+                        }
                         _ => unreachable!("ExprUsage does not match the expression (Block)"),
                     }
                 }
@@ -2073,7 +2319,7 @@ impl Optimizer {
                                     };
 
                                     OptExpr::new(e.clone(), e_usage)
-                                },
+                                }
                                 _ => unreachable!("StmtUsage does not match the statement (Let)"),
                             };
 
@@ -2094,17 +2340,16 @@ impl Optimizer {
                             match used.detailed {
                                 DetailedStmtUsage::Let(sid, _) => {
                                     let_sid = sid; // We collect the correct Sid
-                                },
+                                }
                                 _ => unreachable!("StmtUsage does not match the statement (Let)"),
                             };
                             None
-                        },
+                        }
                     };
 
-                    let (expr, expr_usage) = opt_expr.as_ref().map_or(
-                        (None, None),
-                        |opt_expr| (Some(opt_expr.get_expr()), Some(opt_expr.get_usage()))
-                    );
+                    let (expr, expr_usage) = opt_expr.as_ref().map_or((None, None), |opt_expr| {
+                        (Some(opt_expr.get_expr()), Some(opt_expr.get_usage()))
+                    });
                     let stmt_usage = StmtUsage::new_let(let_sid, expr_usage);
                     let stmt = Statement::Let(m, var_name.clone(), ty, expr);
 
@@ -2134,16 +2379,25 @@ impl Optimizer {
                                 // The unwanted variable is hidden in expressions
                                 let left_opt_expr = OptExpr::new(left_expr.clone(), left_usage);
                                 let right_opt_expr = OptExpr::new(right_expr.clone(), right_usage);
-    
-                                let left_opt_expr = self.remove_assign_from_expr(&left_opt_expr, var_to_remove);
-                                let right_opt_expr = self.remove_assign_from_expr(&right_opt_expr, var_to_remove);
-    
-                                let stmt_usage = StmtUsage::new_assign(sid, left_opt_expr.get_usage(), right_opt_expr.get_usage());
-                                let stmt = Statement::Assign(left_opt_expr.get_expr(), right_opt_expr.get_expr());
-    
+
+                                let left_opt_expr =
+                                    self.remove_assign_from_expr(&left_opt_expr, var_to_remove);
+                                let right_opt_expr =
+                                    self.remove_assign_from_expr(&right_opt_expr, var_to_remove);
+
+                                let stmt_usage = StmtUsage::new_assign(
+                                    sid,
+                                    left_opt_expr.get_usage(),
+                                    right_opt_expr.get_usage(),
+                                );
+                                let stmt = Statement::Assign(
+                                    left_opt_expr.get_expr(),
+                                    right_opt_expr.get_expr(),
+                                );
+
                                 OptStmt::new(stmt, stmt_usage)
                             }
-                        },
+                        }
                         _ => unreachable!("StmtUsage does not match the statement (Assign)"),
                     }
                 }
@@ -2153,13 +2407,14 @@ impl Optimizer {
                             let opt_cond = OptExpr::new(cond.clone(), cond_usage);
                             let opt_block = OptBlock::new(block.clone(), block_usage);
                             (opt_cond, opt_block)
-                        },
+                        }
                         _ => unreachable!("StmtUsage does not match the statement (While)"),
                     };
                     let opt_cond = self.remove_assign_from_expr(&opt_cond, var_to_remove);
                     let opt_block = self.remove_assign_from_block(&opt_block, var_to_remove);
 
-                    let stmt_usage = StmtUsage::new_while(opt_cond.get_usage(), opt_block.get_usage());
+                    let stmt_usage =
+                        StmtUsage::new_while(opt_cond.get_usage(), opt_block.get_usage());
                     let stmt = Statement::While(opt_cond.get_expr(), opt_block.get_block());
 
                     OptStmt::new(stmt, stmt_usage)
@@ -2170,7 +2425,7 @@ impl Optimizer {
                         _ => unreachable!("StmtUsage does not match the statement (Expr)"),
                     };
                     let opt_expr = self.remove_assign_from_expr(&opt_expr, var_to_remove);
-                    
+
                     let stmt_usage = StmtUsage::new_expr(opt_expr.get_usage());
                     let stmt = Statement::Expr(opt_expr.get_expr());
 
@@ -2197,7 +2452,6 @@ impl Optimizer {
     //     b
     // };
     fn optimize_block_redundant_vars(&mut self, init_statements: Vec<OptStmt>) -> Vec<OptStmt> {
-
         // Keep a copy of the scopes to go back to it in the recursive call
         let init_scopes = self.scopes.clone();
 
@@ -2315,7 +2569,11 @@ impl Optimizer {
         }
     }
 
-    fn build_block_return_usage(&self, stmt_usages: Vec<StmtUsage>, block_scope_id: usize) -> BlockUsage {
+    fn build_block_return_usage(
+        &self,
+        stmt_usages: Vec<StmtUsage>,
+        block_scope_id: usize,
+    ) -> BlockUsage {
         // The ExprUsage of a returning block is extracted from the concatenation of every StmtUsage
         let mut block_stmt_usage = SimpleStmtUsage::new();
         let stmt_simple_usages = stmt_usages.iter().map(|su| su.summary.clone()).collect();
@@ -2355,7 +2613,11 @@ impl Optimizer {
         self._optimize_block_with_param(block, false)
     }
 
-    fn _optimize_block_with_param(&mut self, block: Block, is_main: bool) -> Result<OptBlock, Error> {
+    fn _optimize_block_with_param(
+        &mut self,
+        block: Block,
+        is_func_body: bool,
+    ) -> Result<OptBlock, Error> {
         // Optimizing blocks should remove any useless statements, and simplify useful ones.
         // If a block does not affect the program, it should be removed.
         // If it returns a simple literal or variable or operation, and the previous statements do not affect the program or anything, it should be replaced by the return value.
@@ -2365,25 +2627,30 @@ impl Optimizer {
         // - Let statements that are not used.
         // - Function declarations that are not used.
 
-        // First define the block scope
-        self.add_scope();
+        // First define the block scope if it is not a function body (if it is, the scope is already defined)
+        if !is_func_body {
+            self.add_scope();
+        }
+
+        let block_scope_id = self.scopes.len() - 1;
 
         // Then scan the block for function definitions
         self.define_block_functions(&block);
+
+        // Before processing the block itself, we shall optimize each of the functions defined
+        let new_funcs = self.optimize_current_block_functions(0);
+        for (fn_name, scope_fn) in new_funcs.iter() {
+            let func_sid = Sid::new(fn_name.clone(), block_scope_id);
+            self.modify_func(&func_sid, scope_fn.get_fn_decl(), scope_fn.get_call_usage());
+        }
 
         // This copy will be used to detect useless variables that are defined multiple times:
         // let a = 1; <--- This one
         // let a = 2;
         let mut optim_copy = self.clone();
 
-        //? Debug
-        // eprintln!("Block initial scopes:\n{}", self.pretty_string_scopes());
-        // eprintln!("Optimizer initial scopes:\n{}", optim_copy.pretty_string_scopes());
-
         let mut opt_statements: Vec<OptStmt> = vec![];
         let mut block_affects_outer = false;
-
-        let block_scope_id = self.scopes.len() - 1;
 
         // First optimization of each statement
         let nb_stmts = block.statements.len();
@@ -2418,7 +2685,7 @@ impl Optimizer {
 
         // Check if the block is useless -> if it does not return any value + does not affect the outer scope
         // The main function can not be optimized out this way though
-        if !is_main && block.semi && !block_affects_outer {
+        if block.semi && !block_affects_outer {
             // We remove the block scope
             self.remove_scope();
 
@@ -2451,18 +2718,6 @@ impl Optimizer {
 
         //? --- Variable optimizations
 
-        // Special case for the main function
-        // -> In order to avoid optimizing out the main function as well since it does not return any value
-        // we consider that each remaining variable is used at least once
-        if is_main {
-            let last_scope = self.scopes.last_mut().unwrap();
-            for (_, uses) in last_scope.vars.iter_mut() {
-                if uses.clone() == 0 {
-                    *uses = 1;
-                }
-            }
-        }
-
         let mut useless_vars = self.get_current_scope_useless_vars();
 
         //? Debug
@@ -2480,7 +2735,7 @@ impl Optimizer {
         //     eprintln!("{:?}", used.summary);
         // }
         // eprintln!("############################");
-        
+
         let mut _temp_i = 0;
         while !useless_vars.is_empty() {
             let mut new_opt_statements: Vec<OptStmt> = vec![];
@@ -2490,7 +2745,7 @@ impl Optimizer {
             // let a = 1; <--- a is useful
             // let b = f(a);
             // let a = 0; <--- This one is not useful and this one should be removed
-        
+
             for opt_stmt in opt_statements.iter().rev() {
                 let (stmt, used) = opt_stmt.as_tuple();
 
@@ -2525,7 +2780,8 @@ impl Optimizer {
                         } else {
                             // The original statement should be replaced by the new one
                             // We should therefore update the uses accordingly
-                            let reverting_usage = replacing_used.get_subtracted_stmt_usage(&new_used);
+                            let reverting_usage =
+                                replacing_used.get_subtracted_stmt_usage(&new_used);
                             self.revert_stmt_usage(&reverting_usage);
 
                             replacing_used = new_used;
@@ -2533,7 +2789,7 @@ impl Optimizer {
                         }
                     }
                 }
-                
+
                 // If the statement defines a useless variable, we shall remove it
                 if let Some(var_id) = &replacing_used.get_defined_var() {
                     if useless_vars.contains(&var_id) {
@@ -2552,10 +2808,9 @@ impl Optimizer {
                         replacing_opt_stmt = OptStmt::new_empty();
                     }
                 }
-                
+
                 // Check if the statement is not empty
                 if !replacing_opt_stmt.get_stmt().is_empty_statement() {
-                    
                     //? Debug
                     // eprintln!("         ########            ");
                     // eprintln!("Initial opt statement was the following:\n{}", stmt);
@@ -2567,15 +2822,18 @@ impl Optimizer {
                     new_opt_statements.push(replacing_opt_stmt);
                 }
             }
-        
+
             // We shall reverse the order of statements to get back to the correct block order
             opt_statements = new_opt_statements;
             opt_statements.reverse();
             useless_vars = self.get_current_scope_useless_vars();
-            
+
             _temp_i += 1;
             if _temp_i > 100 {
-                panic!("Infinite loop in variables optimization: _temp_i = {}", _temp_i);
+                panic!(
+                    "Infinite loop in variables optimization: _temp_i = {}",
+                    _temp_i
+                );
             }
         }
 
@@ -2602,11 +2860,10 @@ impl Optimizer {
 
         let mut _temp_i = 0;
         while !useless_funcs.is_empty() {
-
             // Here we don't have to bother about the order since a function with a given name can only be defined once in some scope
 
             let mut new_opt_statements: Vec<OptStmt> = vec![];
-        
+
             for opt_stmt in opt_statements.iter() {
                 let (stmt, used) = opt_stmt.as_tuple();
 
@@ -2624,19 +2881,25 @@ impl Optimizer {
                     new_opt_statements.push(opt_stmt.clone());
                 }
             }
-        
+
             opt_statements = new_opt_statements;
             useless_funcs = self.get_current_scope_useless_funcs();
-            
+
             _temp_i += 1;
             if _temp_i > 100 {
-                panic!("Infinite loop in function optimization: _temp_i = {}", _temp_i);
+                panic!(
+                    "Infinite loop in function optimization: _temp_i = {}",
+                    _temp_i
+                );
             }
         }
 
         // Building the final block
 
-        let (final_statements, stmt_usages) = opt_statements.iter().map(|opt_stmt| opt_stmt.as_tuple()).unzip();
+        let (final_statements, stmt_usages) = opt_statements
+            .iter()
+            .map(|opt_stmt| opt_stmt.as_tuple())
+            .unzip();
 
         let opt_block = Block {
             statements: final_statements,
@@ -2671,53 +2934,67 @@ impl Optimizer {
     }
 
     //?###################################################################
-    //?#                             Blocks                              #
+    //?#                            Programs                             #
     //?###################################################################
 
     pub fn optimize_prog(&mut self, prog: Prog) -> Result<Prog, Error> {
         // To optimize a program, we optimize each function declaration.
 
-        // First define the initial scope
-        self.add_scope();
+        // To optimize a program, we will use the block optimization at our advantage,
+        // by crafting the equivalent block, before extracting from it the remaining parts
 
-        let mut opt_fn_decls: Vec<FnDeclaration> = vec![];
+        let func_defs: Vec<Statement> = prog
+            .0
+            .iter()
+            .map(|fn_decl| Statement::Fn(fn_decl.clone()))
+            .collect();
+        let call_main = Statement::Expr(Expr::Call("main".to_string(), Arguments(vec![])));
 
-        // First define each function
-        for fn_decl in prog.0.iter() {
-            self.define_func(fn_decl.clone());
+        let mut final_stmts = func_defs.clone();
+        final_stmts.push(call_main);
 
-            if fn_decl.id == "main" {
-                // The main function automatically has 1 use
-                let main_sid = self.get_func_sid(&fn_decl.id).unwrap();
-                self.use_func(&main_sid);
+        let equivalent_block = Block {
+            statements: final_stmts,
+            semi: false,
+        };
+
+        //? Debug
+        // eprintln!("Equivalent block is:\n{}\n", equivalent_block);
+
+        // Now, we can optimize the built block
+        let opt_block = self._optimize_block(equivalent_block)?;
+
+        //? Debug
+        // eprintln!("Optimized block is:\n{}\n", opt_block.get_block());
+
+        // And then we should extract from it the remaining functions
+        let mut main_func: Option<FnDeclaration> = None;
+        let mut final_func: Vec<FnDeclaration> = Vec::new();
+
+        for stmt in opt_block.get_block().statements {
+            match stmt {
+                Statement::Fn(fn_decl) => {
+                    if fn_decl.id == "main" {
+                        if main_func.is_some() {
+                            return Err("Multiple main functions are not allowed".to_string());
+                        }
+                        main_func = Some(fn_decl);
+                    } else {
+                        final_func.push(fn_decl);
+                    }
+                }
+                _ => continue,
             }
         }
 
-        // Then optimize each of them and replace the previous definition
-        for fn_decl in prog.0.iter() {
-            let fn_decl_opt = self.optimize_fn_declaration(fn_decl.clone())?;
-            let init_scope = self.scopes.last_mut().unwrap();
-            init_scope.remove_func(fn_decl.id.clone());
-            init_scope.define_func(fn_decl_opt.clone());
-
-            opt_fn_decls.push(fn_decl_opt);
+        if main_func.is_none() {
+            return Err("No main function found in program".to_string());
         }
 
-        // At this point, each function has been completely optimized
-        // If one of the given functions is not used, we can remove it from the program (except for main)
-        let mut final_opt_fn_decls: Vec<FnDeclaration> = vec![];
-        for fn_decl in opt_fn_decls.iter() {
-            if fn_decl.id == "main" {
-                final_opt_fn_decls.push(fn_decl.clone());
-                continue;
-            }
+        let main_func = main_func.unwrap();
+        final_func.push(main_func);
 
-            let fn_sid = self.get_func_sid(&fn_decl.id).unwrap();
-            if self.get_func_uses(&fn_sid).unwrap() > 0 {
-                final_opt_fn_decls.push(fn_decl.clone());
-            }
-        }
-
-        Ok(Prog(opt_fn_decls))
+        // Finally, we build back the optimized program
+        Ok(Prog(final_func))
     }
 }

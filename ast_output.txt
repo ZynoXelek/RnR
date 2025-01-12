@@ -1,14 +1,12 @@
-fn gen_array() -> [i32; 3] {
-    [1, 2, 3]
-}
-
-fn f(arr: [i32; 3]) -> i32 {
-    arr[0] * 3 + arr[1] / 2 - arr[2]
+fn some_used_function(a: i32, b: bool) -> i32 {
+    a + if b { 1 } else { 0 }
 }
 
 fn main() {
-    let arr = gen_array();
-    let res = f(arr);
-    println!("{}", res);
+    let x: i32 = 10;
+    let y: i32 = 20;
+    let flag: bool = true;
+    let z = some_used_function(x, flag);
+    println!("x: {}, y: {}, flag: {} --> z = {}", x, y, flag, z);
 }
 

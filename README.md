@@ -80,6 +80,8 @@ Or
 --ast <relative_output_path>
 ```
 
+> **Note:** If you use the optimizer option (`-o`/`--optimize`), the dumped AST will be the optimized AST extracted from your input program.
+
 #### Process type checking
 
 You can process type checking on the parsed result by adding the following subcommand:
@@ -90,6 +92,22 @@ Or
 ```bash
 --type_check
 ```
+
+This process will verify that your input program is formally correct.
+
+#### Optimize the input program
+
+You can process a program optimization on the parsed result by adding the following subcommand:
+```bash
+-o
+```
+Or
+```bash
+--optimize
+```
+
+This process will try to eliminate any dead code from the input program.
+It requires that the type-check option is used.
 
 #### Evaluate the parsed program using the RnR VM
 
@@ -106,6 +124,8 @@ Or
 --virtual_machine
 ```
 
+This process requires that the type-check option is used.
+
 #### Generate the assembler code
 
 You can generate the assembler code corresponding to the parsed program with the RnR backend by adding the following subcommand:
@@ -117,12 +137,16 @@ Or
 --code_gen
 ```
 
+This process requires that the optimization option is used.
+
 #### Dump the generated ASM
 
 You can dump the generated ASM from the parsed program in a file of your choice by adding the following subcommand: (It requires that you have used the `-c` or `--code_gen` subcommand)
 ```bash
 --asm <relative_output_path>
 ```
+
+This process requires that the code generation option is used.
 
 #### Run the generated ASM
 
@@ -135,8 +159,14 @@ Or
 --run
 ```
 
+This process requires that the code generation option is used.
+
 ## Some additional remarks on the project
 
 ### Parser
 
 The RnR parser uses the **syn** crate. It implements a subset of it thanks to the generated **TokenStream**.
+
+### CLI
+
+The Cli uses the **clap** crate to parse the input commands.

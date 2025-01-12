@@ -88,6 +88,11 @@
 
 - Implement ASM parsing and the possibility to load an ASM program and run it through `--asm_input <path>`.
 
+## 2025-01-06 -> 2025-01-12
+
+- Implement full AST optimization to remove useless parts of a given code. This first optimization stage does not replace identifiers with their values, but it removes any useless variable or function definition, and all their assignments. It also gets rid of useless operations on literals, useless blocks. It applies short-circuiting in some operations, and reduces it when it can.
+- Modify AST display to look nicer in case of inner blocks, and add support to display if-then-else_if.
+
 ## TODO
 
 **Mandatory:**
@@ -108,6 +113,7 @@ Primary:
 - Backend optimizations
 - Backend support for functions with any number of arguments (refactor the frame stack to remove arg1, arg2, arg3 and use the intermediate scopes as I already do)
 - Implement arrays in backend
+- Rework Arrays and especially array assignation because it only supports a single assignation for now -> Do not support `a[1][2] = 3;` for instance.
 - Implement references everywhere
 - Implement ownership?
 - Implement custom struct?
