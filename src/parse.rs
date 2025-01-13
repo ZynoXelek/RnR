@@ -471,12 +471,6 @@ fn parse_binary_op_expr(input: ParseStream, left: Expr, min_prio: u8) -> SynResu
         right = parse_operand(input)?;
     }
 
-    //TODO: Move this to type checker later (with custom error)
-    // Checking that no unit type is used in binary operations
-    if left.is_unit() || right.is_unit() {
-        return Err(input.error("Unit type cannot be used in binary operations"));
-    }
-
     // Checking comparisons to panic if they are directly following each other without parenthesis or anything.
     if binop.is_comparison() {
         // We only have to check the left side since the right side will be recursively checked.
@@ -698,6 +692,9 @@ impl Parse for Type {
             if content.is_empty() {
                 typename = "()".to_string();
             }
+        } else if input.peek(Token![_]) {
+            let _: Token![_] = input.parse()?;
+            typename = "_".to_string();
         }
 
         if Type::is_valid_typename(typename.as_str()) {

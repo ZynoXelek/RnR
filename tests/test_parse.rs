@@ -899,6 +899,12 @@ mod test_parsing {
         }
 
         #[test]
+        fn parse_type_any() {
+            let typ: Type = parse("_");
+            assert_eq!(typ, Type::Any);
+        }
+
+        #[test]
         fn parse_type_string() {
             let typ: Type = parse("String");
             assert_eq!(typ, Type::String);

@@ -354,7 +354,12 @@ pub enum TypeError {
         expected: Type,
         found: Type,
     },
+    NeverInitializedVariable {
+        // When a variable is destroyed and is still uninitialized
+        name: String,
+    },
     UninitializedVariable {
+        // When a variable is used but not initialized
         expr: Expr, // Should be an identifier (nothing else can produce this error)
     },
     MainNotFound,
@@ -363,7 +368,6 @@ pub enum TypeError {
         // In Rust, a main function should return either () or Result<(), E>, where E implements the std::error::Error trait.
         found: Type,
     },
-    MainReturnsUninit,
     BinOpTypeMismatch {
         op: BinOp,
         left: Type,
@@ -430,6 +434,11 @@ pub enum TypeError {
         expected: Type,
         found: Type,
     },
+    ArrayInconsistentTypes {
+        // When every element in the array is not of the same type
+        array: Expr,
+        found: Vec<Type>,
+    },
     ArrayInvalidIndex {
         // When the index is not an integer
         index: Expr,
@@ -449,6 +458,10 @@ impl TypeError {
         TypeError::InvalidType { expected, found }
     }
 
+    pub fn never_initialized_variable(name: String) -> Self {
+        TypeError::NeverInitializedVariable { name }
+    }
+
     pub fn uninitialized_variable(expr: Expr) -> Self {
         TypeError::UninitializedVariable { expr }
     }
@@ -463,10 +476,6 @@ impl TypeError {
 
     pub fn main_with_invalid_type(found: Type) -> Self {
         TypeError::MainWithInvalidType { found }
-    }
-
-    pub fn main_returns_uninit() -> Self {
-        TypeError::MainReturnsUninit
     }
 
     pub fn binop_type_mismatch(op: BinOp, left: Type, right: Type) -> Self {
@@ -567,6 +576,10 @@ impl TypeError {
         }
     }
 
+    pub fn array_inconsistent_types(array: Expr, found: Vec<Type>) -> Self {
+        TypeError::ArrayInconsistentTypes { array, found }
+    }
+
     pub fn array_invalid_index(index: Expr, found: Type) -> Self {
         TypeError::ArrayInvalidIndex { index, found }
     }
@@ -591,6 +604,9 @@ impl fmt::Display for TypeError {
                     expected, found
                 )
             }
+            TypeError::NeverInitializedVariable { name } => {
+                write!(f, "Never initialized variable '{}'", name)
+            }
             TypeError::UninitializedVariable { expr } => {
                 write!(f, "Uninitialized variable in expression '{}'", expr)
             }
@@ -606,9 +622,6 @@ impl fmt::Display for TypeError {
                     "Main function should return unit type, found '{}'",
                     found
                 )
-            }
-            TypeError::MainReturnsUninit => {
-                write!(f, "Main function returns uninitialized variable")
             }
             TypeError::BinOpTypeMismatch { op, left, right } => {
                 write!(
@@ -726,6 +739,13 @@ impl fmt::Display for TypeError {
                     f,
                     "Assignment error: expected type '{}' for variable '{}' but '{}' is of type '{}'",
                     expected, expr, expr, found
+                )
+            }
+            TypeError::ArrayInconsistentTypes { array, found } => {
+                write!(
+                    f,
+                    "Array inconsistent types: array '{}' contains elements of different types '{:?}'",
+                    array, found
                 )
             }
             TypeError::ArrayInvalidIndex { index, found } => {

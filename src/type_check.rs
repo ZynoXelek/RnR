@@ -20,8 +20,8 @@ use crate::intrinsics::*;
 #[derive(Debug, Clone, PartialEq)]
 pub enum TypeVal {
     Type(Type),
-    Uninit(Option<Type>),      // Will allow to check for uninitialized variables
-    Mut(Box<TypeVal>), // Will allow to check for assignments to mutable variables
+    Uninit(Option<Type>), // Will allow to check for uninitialized variables
+    Mut(Box<TypeVal>),    // Will allow to check for assignments to mutable variables
 }
 
 //? Conversions
@@ -62,7 +62,6 @@ impl From<Parameter> for TypeVal {
 //? Helpers
 
 impl TypeVal {
-
     pub fn uninitialized() -> TypeVal {
         TypeVal::Uninit(None)
     }
@@ -84,14 +83,18 @@ impl TypeVal {
 
     pub fn initialized_type(t: TypeVal) -> TypeVal {
         match t {
-            TypeVal::Uninit(t) => {
-                match t {
-                    Some(t) => TypeVal::Type(t),
-                    None => panic!("Can't initialize an uninitialized and undefined type"),
-                }
+            TypeVal::Uninit(t) => match t {
+                Some(t) => match t {
+                    Type::Any => panic!("Can't initialize an uninitialized and undefined type"),
+                    _ => TypeVal::Type(t),
+                },
+                None => panic!("Can't initialize an uninitialized and undefined type"),
             },
             TypeVal::Mut(t) => TypeVal::mutable_type(TypeVal::initialized_type(*t)),
-            TypeVal::Type(_) => t, // Already initialized
+            TypeVal::Type(t) => match t {
+                Type::Any => panic!("Can't initialize an uninitialized and undefined type"),
+                _ => TypeVal::Type(t),
+            },
         }
     }
 
@@ -103,10 +106,25 @@ impl TypeVal {
     }
 
     pub fn is_uninitialized(&self) -> bool {
+        self._is_uninitialized_with_param(false)
+    }
+
+    pub fn _is_uninitialized_with_param(&self, look_into_arrays: bool) -> bool {
         match self {
+            TypeVal::Type(t) => match t {
+                Type::Any => true,
+                Type::Array(ty, _) => {
+                    if look_into_arrays {
+                        let inner_type_val = TypeVal::Type(*ty.clone());
+                        inner_type_val._is_uninitialized_with_param(true)
+                    } else {
+                        false
+                    }
+                }
+                _ => false,
+            },
             TypeVal::Uninit(_) => true,
             TypeVal::Mut(t) => t.is_uninitialized(),
-            _ => false,
         }
     }
 
@@ -122,7 +140,10 @@ impl TypeVal {
     // Will panic if the type is uninitialized (useful for tests)
     pub fn get_initialized_type(&self) -> Type {
         match self {
-            TypeVal::Type(t) => t.clone(),
+            TypeVal::Type(t) => match t {
+                Type::Any => panic!("Can't get an initialized type from an undefined type"),
+                _ => t.clone(),
+            },
             TypeVal::Uninit(_) => panic!("Uninitialized type"),
             TypeVal::Mut(t) => t.get_initialized_type(),
         }
@@ -139,7 +160,7 @@ impl fmt::Display for TypeVal {
                 } else {
                     write!(f, "Uninit(_)")
                 }
-            },
+            }
             TypeVal::Mut(t) => write!(f, "Mut({})", t),
         }
     }
@@ -210,16 +231,14 @@ impl BinOp {
             }
             // Array operations
             BinOp::Get => match (left_type.clone(), right_type.clone()) {
-                (Type::Array(t, _), Type::I32) => {
-                    Ok(TypeVal::Type(*t))
-                }
+                (Type::Array(ty, _), Type::I32) => Ok(TypeVal::Type(*ty)),
                 _ => Err(TypeError::binop_type_mismatch(
                     self.clone(),
                     left_type.clone(),
                     right_type.clone(),
                 )),
             },
-            _ => unimplemented!("type eval not implemented for binary operation {:?}", self),
+            // _ => unimplemented!("type eval not implemented for binary operation {:?}", self),
         }
     }
 }
@@ -251,8 +270,7 @@ impl UnOp {
                         operand_type.clone(),
                     ))
                 }
-            }
-            _ => unimplemented!("type eval not implemented for unary operation {:?}", self),
+            } // _ => unimplemented!("type eval not implemented for unary operation {:?}", self),
         }
     }
 }
@@ -321,7 +339,7 @@ impl EvalType<TypeVal> for Prog {
                             return Err(TypeError::main_with_invalid_type(t));
                         }
                     }
-                    None => return Err(TypeError::main_returns_uninit()),
+                    None => unreachable!("Main function returns an uninitialized type"),
                 }
             }
         }
@@ -421,7 +439,6 @@ impl TVM {
         then_state: Vec<HashMap<String, TypeVal>>,
         else_state: Vec<HashMap<String, TypeVal>>,
     ) -> Result<Vec<HashMap<String, TypeVal>>, TypeError> {
-        
         // First, we extract the names and scope_ids of each uninitialized variable in the initial state
         let mut uninitialized_vars: HashMap<String, usize> = HashMap::new();
         for (scope_id, scope) in init_state.iter().enumerate() {
@@ -492,7 +509,7 @@ impl TVM {
         // It replaces the already defined variable with the initialized one
 
         let (_, scope) = self.get_var_and_scope(name)?; // Check that the variable exists
-        
+
         // Now we can redefine the corresponding var
         self.var_env[scope].insert(name.to_string(), ty.clone());
 
@@ -652,7 +669,6 @@ impl TVM {
         }
 
         // Counting the number of '{}' and '{:?}' in the string
-        let mut nb_args = 0;
         let s = match first_arg {
             Expr::Lit(Literal::String(s)) => s,
             _ => unreachable!(),
@@ -660,7 +676,7 @@ impl TVM {
 
         // Matches on '{}' and '{:?}', but should not match on '{{}}' or '{{:?}}'
         let re = regex::Regex::new(r"(\{\})|(\{\:\?\})").unwrap();
-        nb_args = re.find_iter(s).count();
+        let nb_args = re.find_iter(s).count();
 
         // Verifying the number of arguments
         if args.0.len() - 1 != nb_args {
@@ -685,7 +701,62 @@ impl TVM {
     pub fn eval_type_expr(&mut self, expr: &Expr) -> Result<TypeVal, TypeError> {
         match expr {
             Expr::Ident(name) => self.get_var(name),
-            Expr::Lit(lit) => Ok(TypeVal::from(lit.clone())),
+            Expr::Lit(lit) => {
+                // We need a special case for arrays, as we must check that it is valid in size and inner types
+
+                match lit {
+                    Literal::Array(array) => {
+                        let (expressions, size) = array.as_tuple();
+
+                        if size != expressions.len() {
+                            // This would be an internal coding error, not an error from the user
+                            unreachable!("Array size and expressions size mismatch");
+                        }
+
+                        if size == 0 {
+                            // Empty array, cannot infer the type from it, it could be anything
+                            return Ok(TypeVal::from(Type::Array(Box::new(Type::Any), 0)));
+                        }
+
+                        let first_type = {
+                            let expr = expressions.first().unwrap();
+                            let expr_type = self.eval_type_expr(expr)?;
+                            if expr_type.is_uninitialized() {
+                                return Err(TypeError::uninitialized_variable((*expr).clone()));
+                            }
+                            expr_type.get_type().unwrap()
+                        };
+
+                        let mut types: Vec<Type> = Vec::new();
+                        types.push(first_type.clone());
+
+                        let mut are_all_same: bool = true;
+
+                        for i in 1..expressions.len() {
+                            let expr = &expressions[i];
+
+                            let expr_type = self.eval_type_expr(expr)?;
+                            if expr_type.is_uninitialized() {
+                                return Err(TypeError::uninitialized_variable((*expr).clone()));
+                            }
+
+                            let expr_type = expr_type.get_type().unwrap();
+                            if first_type != expr_type {
+                                are_all_same = false;
+                            }
+
+                            types.push(expr_type);
+                        }
+
+                        if !are_all_same {
+                            return Err(TypeError::array_inconsistent_types(expr.clone(), types));
+                        }
+
+                        Ok(TypeVal::from(Type::Array(Box::new(first_type), size)))
+                    }
+                    _ => Ok(TypeVal::from(lit.clone())),
+                }
+            }
             Expr::BinOp(op, left, right) => {
                 let left_type = self.eval_type_expr(left)?;
                 // If it is uninitialized, we have an issue and won't be able to apply the binary operation
@@ -699,7 +770,20 @@ impl TVM {
                     return Err(TypeError::uninitialized_variable((**right).clone()));
                 }
 
-                op.eval_type(left_type, right_type)
+                let binop_res = op.eval_type(left_type.clone(), right_type);
+                match binop_res {
+                    Ok(t) => Ok(t),
+                    Err(e) => {
+                        // Special case for arrays to have a better error message
+                        if op.clone() == BinOp::Get {
+                            return Err(TypeError::array_invalid_index(
+                                (**left).clone(),
+                                left_type.get_type().unwrap(),
+                            )); // Can't panic since is_initialized
+                        }
+                        Err(e)
+                    }
+                }
             }
             Expr::UnOp(op, operand) => {
                 let operand_type = self.eval_type_expr(operand)?;
@@ -779,7 +863,6 @@ impl TVM {
 
                 // If there is a else block, we have to check that both blocks return the same type
                 if let Some(else_block) = else_block {
-
                     // Stores the state after the then block
                     let then_state = self.var_env.clone();
                     // Restores the initial state
@@ -791,7 +874,8 @@ impl TVM {
                     let else_state = self.var_env.clone();
 
                     // Checks for initialized variables
-                    self.var_env = TVM::check_if_branches_init(initial_state, then_state, else_state)?;
+                    self.var_env =
+                        TVM::check_if_branches_init(initial_state, then_state, else_state)?;
 
                     if then_type.get_type() != else_type.get_type() {
                         return Err(TypeError::if_blocks_type_mismatch(
@@ -804,7 +888,7 @@ impl TVM {
                 Ok(then_type)
             }
             Expr::Block(block) => self.eval_type_block(block),
-            _ => unimplemented!("type eval not implemented for expression {:?}", expr),
+            // _ => unimplemented!("type eval not implemented for expression {:?}", expr),
         }
     }
 
@@ -816,6 +900,15 @@ impl TVM {
                 // If there are both a type and an expression, we have to check that the expression type is correct
                 // If there is none, it is an error
 
+                // First, we have to check if a variable with the same name is already defined in the same scope
+                // and if it is never initialized.
+                let scope_vars = self.var_env.last().unwrap();
+                if let Some(val) = scope_vars.get(name) {
+                    if val._is_uninitialized_with_param(true) {
+                        return Err(TypeError::never_initialized_variable(name.clone()));
+                    }
+                }
+
                 let mut val: TypeVal = TypeVal::uninitialized();
                 let mut expr_type: Option<Type> = None;
 
@@ -824,11 +917,13 @@ impl TVM {
                     expr_type = Some(expr_val_type.get_type().unwrap());
                 }
 
-                if ty.is_some() {
+                if ty.is_some() && !ty.clone().unwrap().contains_any() {
                     let ty = ty.clone().unwrap();
                     if expr_type.is_some() {
                         let expr_type = expr_type.clone().unwrap();
-                        if ty != expr_type {
+
+                        if !ty.equals(&expr_type) {
+                            // This support arrays and empty arrays
                             // There is both an expression and an explicit type, but they don't match
                             return Err(TypeError::let_type_mismatch(
                                 name.clone(),
@@ -856,7 +951,7 @@ impl TVM {
                     val = TypeVal::mutable_type(val);
                 }
 
-                self.define_var(name, val)?;
+                self.define_var(name, val.clone())?;
 
                 Ok(TypeVal::Type(Type::Unit)) // Let statement returns unit
             }
@@ -865,91 +960,62 @@ impl TVM {
                 // The left expression can either be a mutable, or an uninitialized variable
                 // If it is none, it means that it is either not a variable, or that it is not mutable.
 
-                match left {
-                    Expr::Ident(name) => {
-                        let left_type = self.eval_type_expr(left)?;
+                let var_ident = match left.extract_var_identifier() {
+                    Some(ident) => ident,
+                    None => return Err(TypeError::assignment_invalid_left_expr((*left).clone())),
+                };
 
-                        if !left_type.is_mutable() && !left_type.is_uninitialized() {
-                            return Err(TypeError::assignment_invalid_left_expr((*left).clone()));
-                        }
+                let left_type = self.eval_type_expr(left)?; // This will also verify that the array get is correct (uses integer indexes)
 
-                        let right_type = self.eval_type_expr(right)?;
-
-                        // It must be of correct initialized type
-                        if left_type.get_type().is_some() && right_type.get_type().unwrap() != left_type.get_type().unwrap() {
-                            return Err(TypeError::assignment_type_mismatch(
-                                (*right).clone(),
-                                left_type.get_type().unwrap(),
-                                right_type.get_type().unwrap(),
-                            ));
-                        } else if right_type.is_uninitialized() {
-                            return Err(TypeError::uninitialized_variable((*right).clone()));
-                        }
-
-                        // Everything is correct, we can assign the value
-                        // If left expr was uninitialized, it is now initialized
-                        if left_type.is_uninitialized() {
-                            self.init_var(name, right_type)?;
-                        }
-
-                        Ok(TypeVal::Type(Type::Unit)) // Assign statement returns unit
-                    }
-                    Expr::BinOp(BinOp::Get, l, r) => {
-                        // Can only be an array.get() expression
-                        // Left val should be an array identifier
-                        let l_expr = *(l.clone());
-                        match l_expr {
-                            Expr::Ident(ident) => {
-                                let l_type_val = self.eval_type_expr(l)?;
-                                let l_type = l_type_val.get_type().unwrap();
-                                // It should be a mutable array
-                                if !l_type_val.is_mutable() {
-                                    return Err(TypeError::assignment_invalid_left_expr(
-                                        (*left).clone(),
-                                    ));
-                                }
-                                if let Type::Array(_, _) = l_type {
-                                } else {
-                                    // I don't know how to write the negation above...
-                                    return Err(TypeError::invalid_type(Type::GenericArray, l_type));
-                                }
-
-                                let index_type = self.eval_type_expr(r)?;
-                                let val = self.eval_type_expr(right)?;
-
-                                // Should check that index is an integer
-                                if index_type.get_type().unwrap() != Type::I32 {
-                                    return Err(TypeError::array_invalid_index(
-                                        *(r.clone()),
-                                        index_type.get_type().unwrap(),
-                                    ));
-                                }
-
-                                // Should check that the value is of the same type as the array
-                                let inner_type = match l_type {
-                                    Type::Array(t, _) => *t,
-                                    _ => unreachable!(),
-                                };
-
-                                if val.get_type().unwrap() != inner_type {
-                                    return Err(TypeError::assignment_type_mismatch(
-                                        (*right).clone(),
-                                        inner_type,
-                                        val.get_type().unwrap(),
-                                    ));
-                                }
-
-                                Ok(TypeVal::Type(Type::Unit)) // Assign statement returns unit
-                            }
-                            _ => {
-                                return Err(TypeError::assignment_invalid_left_expr(
-                                    (*left).clone(),
-                                ))
-                            }
-                        }
-                    }
-                    _ => return Err(TypeError::assignment_invalid_left_expr((*left).clone())),
+                let var_type = self.get_var(&var_ident)?;
+                if !var_type.is_mutable() && !var_type.is_uninitialized() {
+                    return Err(TypeError::assignment_invalid_left_expr((*left).clone()));
                 }
+
+                let right_type = self.eval_type_expr(right)?;
+
+                // It must be of correct initialized type
+                if left_type.get_type().is_some() {
+                    let right_type = right_type.get_type().unwrap();
+                    let left_type = left_type.get_type().unwrap();
+
+                    if !left_type.equals(&right_type) {
+                        return Err(TypeError::assignment_type_mismatch(
+                            (*right).clone(),
+                            left_type,
+                            right_type,
+                        ));
+                    }
+                } else if right_type.is_uninitialized() {
+                    return Err(TypeError::uninitialized_variable((*right).clone()));
+                }
+
+                // Everything is correct, we can assign the value
+                // If left expr was uninitialized, it is now initialized
+                let r_ty = right_type.get_type().unwrap();
+
+                if left_type.is_uninitialized() {
+                    if !r_ty.contains_any() {
+                        self.init_var(&var_ident, right_type)?;
+                    } else if let TypeVal::Uninit(ty) = left_type.clone() {
+                        match ty {
+                            Some(t) => {
+                                if !t.contains_any() {
+                                    self.init_var(&var_ident, TypeVal::initialized_type(left_type))?;
+                                }
+                            }
+                            None => unreachable!("Can't assign a value that is Any to an uninitialized variable with no type given"),
+                        }
+                    } else {
+                        // The only possible case here would be
+                        // let a: [_; 0];
+                        // a = [];
+                        // But this is also an issue for the original rust language. It needs type annotations
+                        unreachable!("Can't assign a value that is Any to an uninitialized variable with no type given");
+                    }
+                }
+
+                Ok(TypeVal::Type(Type::Unit)) // Assign statement returns unit
             }
             Statement::While(cond, block) => {
                 // We should verify that the condition is an initialized boolean
@@ -957,19 +1023,21 @@ impl TVM {
                 let cond_type = self.eval_type_expr(cond)?;
 
                 // It should be an initialized boolean
-                if cond_type.get_type().unwrap() != Type::Bool {
+                if cond_type.is_uninitialized() {
+                    return Err(TypeError::uninitialized_variable((*cond).clone()));
+                } else if cond_type.get_type().unwrap() != Type::Bool {
                     return Err(TypeError::invalid_while_condition(
                         (*cond).clone(),
                         cond_type.get_type().unwrap(),
                     ));
-                } else if cond_type.is_uninitialized() {
-                    return Err(TypeError::uninitialized_variable((*cond).clone()));
                 }
 
                 let block_type = self.eval_type_block(block)?;
 
                 if block_type.get_type().unwrap() != Type::Unit {
-                    return Err(TypeError::while_block_type_mismatch(block_type.get_type().unwrap()));
+                    return Err(TypeError::while_block_type_mismatch(
+                        block_type.get_type().unwrap(),
+                    ));
                 }
 
                 Ok(TypeVal::Type(Type::Unit)) // While statement returns unit
@@ -978,8 +1046,7 @@ impl TVM {
             Statement::Fn(fn_decl) => {
                 self.define_func(&fn_decl)?;
                 Ok(Literal::Unit.into()) // Returns a unit value
-            }
-            _ => unimplemented!("type eval not implemented for statement {:?}", stmt),
+            } // _ => unimplemented!("type eval not implemented for statement {:?}", stmt),
         }
     }
 
@@ -1023,6 +1090,15 @@ impl TVM {
         //eprintln!("Block was:\n{}", block);
         //eprintln!("Actual state:\n{}", self.pretty_print_state());
         //eprintln!("Block result value is {:?} (semi = {})", result, block.semi);
+
+        // Before removing scope, we need to verify that each variable has been initialized
+        // An uninitialized variable should be an error
+        let vars = self.var_env.last().unwrap();
+        for (name, val) in vars.iter() {
+            if val._is_uninitialized_with_param(true) {
+                return Err(TypeError::never_initialized_variable(name.clone()));
+            }
+        }
 
         // Removing the scope from the stack
         self.remove_scope();

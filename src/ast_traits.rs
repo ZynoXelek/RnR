@@ -19,7 +19,7 @@ fn get_tabs(nb_tabs: usize) -> String {
 
 //?#################################################################################################
 //?#                                                                                               #
-//?#                                        'Array' Type                                           #
+//?#                                         Array Type                                            #
 //?#                                                                                               #
 //?#################################################################################################
 
@@ -29,6 +29,10 @@ impl Array {
             values: expressions.clone(),
             size: expressions.len(),
         }
+    }
+
+    pub fn as_tuple(&self) -> (Vec<Expr>, usize) {
+        (self.values.clone(), self.size)
     }
 }
 
@@ -64,17 +68,34 @@ impl<T: Into<Literal>> From<T> for Type {
             Literal::Bool(_) => Type::Bool,
             Literal::Int(_) => Type::I32,
             Literal::String(_) => Type::String,
-            Literal::Array(_) => {
-                // By default, since we need the type checker to infer the type of an array,
-                // we return the GenericArray type
-                Type::GenericArray
-            } // _ => unimplemented!("Type::from for {:?}", lit),
+            _ => unimplemented!("Type::from for {:?}", lit),
         }
     }
 }
 
 impl Type {
     //TODO: Optimize regex so that it is only compiled once and it can be centralized for both functions
+
+    pub fn contains_any(&self) -> bool {
+        match self {
+            Type::Any => true,
+            Type::Array(ty, _) => ty.contains_any(),
+            _ => false,
+        }
+    }
+
+    pub fn equals(&self, other: &Type) -> bool {
+        match (self, other) {
+            (Type::Any, _) => true,
+            (_, Type::Any) => true,
+            (Type::I32, Type::I32) => true,
+            (Type::Bool, Type::Bool) => true,
+            (Type::String, Type::String) => true,
+            (Type::Unit, Type::Unit) => true,
+            (Type::Array(ty1, size1), Type::Array(ty2, size2)) => size1 == size2 && ty1.equals(ty2),
+            _ => false,
+        }
+    }
 
     pub fn new(typename: &str) -> Self {
         // Array support
@@ -94,6 +115,7 @@ impl Type {
             "bool" => Type::Bool,
             "String" => Type::String,
             "()" => Type::Unit,
+            "_" => Type::Any,
             _ => unimplemented!("Type::new for {:?}", typename),
         }
     }
@@ -115,7 +137,7 @@ impl Type {
 
         // Other types
         match typename {
-            "i32" | "bool" | "String" | "()" => true,
+            "i32" | "bool" | "String" | "()" | "_" => true,
             _ => false,
         }
     }
@@ -124,14 +146,12 @@ impl Type {
 impl fmt::Display for Type {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Type::GenericType => write!(f, "_"),
+            Type::Any => write!(f, "_"),
             Type::I32 => write!(f, "i32"),
             Type::Bool => write!(f, "bool"),
             Type::String => write!(f, "String"),
             Type::Unit => write!(f, "()"),
             Type::Array(ty, size) => write!(f, "[{}; {}]", ty, size),
-            Type::GenericArray => write!(f, "[_; _]"), // Not for use, only for display
-                                                       // _ => unimplemented!("Type::fmt for {:?}", self),
         }
     }
 }
@@ -309,6 +329,21 @@ impl Expr {
             }
             Expr::Block(b) => b.is_unit(),
             _ => false, // The type checker verifies the other cases in its vm
+        }
+    }
+
+    // Function to extract a variable identifier from an expression
+    // It can be used for direct Ident expressions 'a' but it is not very useful
+    // However, it can be used for array in this kind of expressions: a[0][1]
+    // This is read as BinOp(Get, BinOp(Get, Ident(a), 0), 1)
+    pub fn extract_var_identifier(&self) -> Option<String> {
+        match self {
+            Expr::Ident(ident) => Some(ident.clone()),
+            Expr::BinOp(BinOp::Get, left, _) => {
+                let left = *left.clone();
+                left.extract_var_identifier()
+            }
+            _ => None, // There is no unique identifier here
         }
     }
 

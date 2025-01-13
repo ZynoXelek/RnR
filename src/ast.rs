@@ -1,11 +1,10 @@
 #[derive(Debug, Clone, PartialEq)]
 pub enum Type {
-    GenericType, // Not for use, only for display -> "_"
+    Any, // ("_") used for empty arrays, or the same as not giving the type in a let
     I32,
     Bool,
     String,
     Array(Box<Type>, usize),
-    GenericArray, // Not for use, only for display -> "[_; _]"
     Unit,
 }
 
