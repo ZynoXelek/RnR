@@ -1,11 +1,18 @@
 #[derive(Debug, Clone, PartialEq)]
 pub enum Type {
+    GenericType, // Not for use, only for display -> "_"
     I32,
     Bool,
     String,
     Array(Box<Type>, usize),
+    GenericArray, // Not for use, only for display -> "[_; _]"
     Unit,
-    GenericArray, // Not for use, only for display
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct Array {
+    pub values: Vec<Expr>,
+    pub size: usize,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -13,7 +20,7 @@ pub enum Literal {
     Bool(bool),
     Int(i32),
     String(String),
-    Array(Vec<Literal>, usize), //TODO: Change to Expr rather than Literal? And move to Expr?
+    Array(Array),
     Unit,
 }
 

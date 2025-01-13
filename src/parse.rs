@@ -1,14 +1,16 @@
 use crate::{
     ast::{
-        Arguments, BinOp, Block, Expr, FnDeclaration, Literal, Mutable, Parameter, Parameters,
-        Prog, Statement, Type, UnOp,
+        Arguments, Array, BinOp, Block, Expr, FnDeclaration, Literal, Mutable, Parameter,
+        Parameters, Prog, Statement, Type, UnOp,
     },
+    common::Eval,
     error::*,
+    vm::Val,
 };
 
 use syn::{
     parse::{Parse, ParseStream},
-    Error as SynError, Result, Token,
+    Error as SynError, Result as SynResult, Token,
 };
 
 use proc_macro2::TokenStream;
@@ -19,14 +21,14 @@ pub fn parse<T: Parse>(src: &str) -> T {
 }
 
 /// A small helper function for parsing source strings.
-pub fn try_parse<T: Parse>(src: &str) -> Result<T> {
+pub fn try_parse<T: Parse>(src: &str) -> SynResult<T> {
     let ts: proc_macro2::TokenStream = src.parse()?;
     syn::parse2::<T>(ts)
 }
 
 /// Might be useful if you are struggling with parsing something and you want to see what the
 /// tokens are that syn produces.
-pub fn try_parse_debug<T: Parse + std::fmt::Debug>(src: &str) -> Result<T> {
+pub fn try_parse_debug<T: Parse + std::fmt::Debug>(src: &str) -> SynResult<T> {
     println!("parsing source string:\n{}", src);
     let ts: proc_macro2::TokenStream = src.parse()?;
     println!("tokens:\n{}", ts);
@@ -35,9 +37,112 @@ pub fn try_parse_debug<T: Parse + std::fmt::Debug>(src: &str) -> Result<T> {
     result
 }
 
-// Back-port your parser
-// You may want to put the tests in a module.
-// See e.g., the vm.rs
+//?#################################################################################################
+//?#                                                                                               #
+//?#                                         'Array' Type                                          #
+//?#                                                                                               #
+//?#################################################################################################
+
+impl Parse for Array {
+    fn parse(input: ParseStream) -> SynResult<Self> {
+        // There are two possible parsing situations
+        // Case 1: [1, 2, 3] -> instinctive way to define an array
+        // Case 2: [1; 3] -> special initialization syntax
+        let input_str = input.to_string();
+
+        if !input.peek(syn::token::Bracket) {
+            // The input does not start with a bracket
+            let next_token = input.parse::<TokenStream>().unwrap().to_string();
+            return Err(ParsingError::expected_token(
+                "[".to_string(),
+                next_token,
+                input_str,
+                ParsingContext::Array,
+            )
+            .into());
+        }
+
+        let content;
+        let _ = syn::bracketed!(content in input);
+
+        let mut expressions: Vec<Expr> = Vec::new();
+
+        while !content.is_empty() {
+            let expr: Expr = content.parse()?;
+            expressions.push(expr);
+
+            // If there is a comma, we consume it
+            if content.peek(Token![,]) {
+                let _: Token![,] = content.parse()?;
+            } else if content.peek(Token![;]) && expressions.len() == 1 {
+                // This is the special syntax [init; size]
+                // Input is: 1; 3 for instance
+                let _: Token![;] = content.parse()?;
+                let size_expr: Expr = content.parse()?;
+
+                // The size expression shall be constant
+                // Since we do not have implemented the 'const' keyword, it means it should not have
+                // any identifier in it -> it cannot use any var or func
+                let val: Result<Val, EvalError> = size_expr.eval();
+                let i32_size = match val {
+                    Ok(val) => {
+                        // Let's try to get its integer value
+                        let ivalue = val.get_int();
+                        match ivalue {
+                            Ok(i) => i,
+                            Err(e) => {
+                                return Err(ParsingError::invalid_arr_size(
+                                    size_expr.to_string(),
+                                    input_str,
+                                    ParsingContext::Array,
+                                )
+                                .into())
+                            }
+                        }
+                    }
+                    Err(e) => {
+                        return Err(ParsingError::invalid_arr_size(
+                            size_expr.to_string(),
+                            input_str,
+                            ParsingContext::Array,
+                        )
+                        .into())
+                    }
+                };
+
+                if i32_size < 0 {
+                    return Err(ParsingError::invalid_arr_size(
+                        size_expr.to_string(),
+                        input_str,
+                        ParsingContext::Array,
+                    )
+                    .into());
+                }
+
+                let size = i32_size as usize;
+                let val_expr = expressions[0].clone();
+
+                for _ in 1..size {
+                    expressions.push(val_expr.clone());
+                }
+
+                break;
+            } else if !content.is_empty() {
+                // Wrong parsing, the array have several elements not separated by commas
+                let next_token = content.parse::<TokenStream>().unwrap().to_string();
+                return Err(ParsingError::expected_token(
+                    ",".to_string(),
+                    next_token,
+                    input_str,
+                    ParsingContext::Literal,
+                )
+                .into());
+            }
+        }
+
+        Ok(Array::new(expressions))
+    }
+}
 
 //?#################################################################################################
 //?#                                                                                               #
@@ -46,7 +151,7 @@ pub fn try_parse_debug<T: Parse + std::fmt::Debug>(src: &str) -> Result<T> {
 //?#################################################################################################
 
 impl Parse for Literal {
-    fn parse(input: ParseStream) -> Result<Self> {
+    fn parse(input: ParseStream) -> SynResult<Self> {
         // First check if the literal is of unit type '()'.
         // The TokenStream may either be empty in this case, or empty parentheses.
         let input_str = input.to_string();
@@ -64,59 +169,8 @@ impl Parse for Literal {
 
         // Support array literals, such as [1, 2, 3] or [1, 2, 3,] but also [3; 1] -> array of 3 elements filled with 1
         if input.peek(syn::token::Bracket) {
-            let content;
-            let _ = syn::bracketed!(content in input);
-
-            // Now we have the content inside the brackets. ex: 1, 2, 3 or 1, 2, 3,
-            // We can parse this content as a list of literals separated by commas
-            let mut literals: Vec<Literal> = Vec::new();
-            let mut size: usize = 0;
-
-            // Check for the special syntax
-            let str_repr = content.to_string();
-            let r = regex::Regex::new(r"^.+;.+$").unwrap();
-
-            if let Some(caps) = r.captures(&str_repr) {
-                // This is the special syntax [init; size]
-                
-                // Parse the init value
-                // TODO: allow for expressions in init value
-                let init: Literal = content.parse()?;
-
-                // Consume the semicolon
-                let _: Token![;] = content.parse()?;
-
-                // Parse the size
-                // TODO: allow for CONSTANT expressions in size
-                let size_lit: Literal = content.parse()?;
-                let size: usize = size_lit.get_int() as usize;
-
-                return Ok(Literal::Array(vec![init; size], size))
-            } else {
-                //TODO: Support expressions in array literals
-                while !content.is_empty() {
-                    let lit: Literal = content.parse()?;
-                    literals.push(lit);
-                    size += 1;
-
-                    // If there is a comma, we consume it
-                    if content.peek(Token![,]) {
-                        let _: Token![,] = content.parse()?;
-                    } else if !content.is_empty() {
-                        // Wrong parsing, the array have several elements not separated by commas
-                        let next_token = content.parse::<TokenStream>().unwrap().to_string();
-                        return Err(ParsingError::expected_token(
-                            ",".to_string(),
-                            next_token,
-                            input_str,
-                            ParsingContext::Literal,
-                        )
-                        .into());
-                    }
-                }
-            }
-
-            return Ok(Literal::Array(literals, size));
+            let arr: Array = input.parse()?;
+            return Ok(arr.into());
         }
 
         // Use the "built in" syn parser for classic literals
@@ -133,7 +187,7 @@ impl Parse for Literal {
 //?#################################################################################################
 
 impl Parse for BinOp {
-    fn parse(input: ParseStream) -> Result<Self> {
+    fn parse(input: ParseStream) -> SynResult<Self> {
         let input_str = input.to_string();
 
         // Integer operations
@@ -204,7 +258,7 @@ impl Parse for BinOp {
 //?#################################################################################################
 
 impl Parse for UnOp {
-    fn parse(input: ParseStream) -> Result<Self> {
+    fn parse(input: ParseStream) -> SynResult<Self> {
         let input_str = input.to_string();
 
         if input.peek(Token![!]) {
@@ -231,7 +285,7 @@ impl Parse for UnOp {
 //?#################################################################################################
 
 impl Parse for Expr {
-    fn parse(input: ParseStream) -> Result<Self> {
+    fn parse(input: ParseStream) -> SynResult<Self> {
         // Expressions can be literals, identifiers, unary operations, binary operations, function calls, blocks, or if-then-else expressions.
 
         // Parse the first part of the expression.
@@ -271,7 +325,7 @@ fn peek_unop(input: ParseStream) -> bool {
     input.fork().parse::<UnOp>().is_ok()
 }
 
-fn parse_array_access(input: ParseStream) -> Result<(BinOp, Expr)> {
+fn parse_array_access(input: ParseStream) -> SynResult<(BinOp, Expr)> {
     // Should parse array access such as `a[i]`
     let input_str = input.to_string();
 
@@ -318,7 +372,7 @@ fn end_of_expr(input: ParseStream) -> bool {
 /// Parse what could be an operand, i.e. the first part of a binary expression.
 /// This could be a literal, an identifier, a unary op, an expression in parentheses, a block, or an if-statement.
 /// For example: `3 + ...`, `x + ...`, `!true && ...`, `(1+2) + ...`, `[1,2,3][0] + ...`, '{...} + ...', or 'if ... {...} else {...} + ...'
-fn parse_operand(input: ParseStream) -> Result<Expr> {
+fn parse_operand(input: ParseStream) -> SynResult<Expr> {
     let input_str = input.to_string();
 
     if peek_unop(input) {
@@ -338,7 +392,7 @@ fn parse_operand(input: ParseStream) -> Result<Expr> {
                 return Ok(Expr::Lit(Literal::Int(-i)));
             }
         }
-        
+
         Ok(Expr::un_op(op, final_operand))
     } else if input.peek(syn::token::Paren) {
         // This should parse expressions in parentheses, such as `(1 + 2)`
@@ -383,7 +437,7 @@ fn parse_operand(input: ParseStream) -> Result<Expr> {
 /// `1` or `1 + 2`, and the input might be `+ 2` or `+ 2 + 3`, etc.
 /// The priority (or precedence) of operators is taken into account during parsing
 /// so we get the correct AST.
-fn parse_binary_op_expr(input: ParseStream, left: Expr, min_prio: u8) -> Result<Expr> {
+fn parse_binary_op_expr(input: ParseStream, left: Expr, min_prio: u8) -> SynResult<Expr> {
     let input_str = input.to_string();
 
     // Making sure there is anything to parse.
@@ -478,7 +532,7 @@ fn parse_binary_op_expr(input: ParseStream, left: Expr, min_prio: u8) -> Result<
 
 //? -------------------------------- Identifier case ------------------------------------------------
 
-fn parse_ident_or_call(input: ParseStream) -> Result<Expr> {
+fn parse_ident_or_call(input: ParseStream) -> SynResult<Expr> {
     // This should parse identifiers such as 'a', 'my_var'
     // It should also parse function calls such as 'my_func(1, 2, 3)'
 
@@ -533,7 +587,7 @@ impl From<IfThenOptElse> for Expr {
 }
 
 impl Parse for IfThenOptElse {
-    fn parse(input: ParseStream) -> Result<IfThenOptElse> {
+    fn parse(input: ParseStream) -> SynResult<IfThenOptElse> {
         // If statements look like `if expr { then block }` or `if expr { then block } else { else block }`
         // But they can also use the notation `if expr { then block } else if expr { then block } ... else { else block }`
         // with multiple 'else if' which should be parsed as else { if expr { then block } else { ... } }
@@ -606,7 +660,7 @@ fn convert_if_then_else_to_block(if_then_else: IfThenOptElse) -> Block {
 use quote::quote;
 
 impl Parse for Type {
-    fn parse(input: ParseStream) -> Result<Type> {
+    fn parse(input: ParseStream) -> SynResult<Type> {
         // The syn::Type is very complex and overkill
         // Types in Rust involve generics, paths
         // etc., etc., etc. ...
@@ -661,7 +715,7 @@ impl Parse for Type {
 //?#################################################################################################
 
 impl Parse for Arguments {
-    fn parse(input: ParseStream) -> Result<Arguments> {
+    fn parse(input: ParseStream) -> SynResult<Arguments> {
         // arguments are enclosed in parentheses (can be empty)
         // they are separated by commas, with the last one being optional
         // ex: (1, 2, 3) or (1, 2, 3,)
@@ -707,7 +761,7 @@ impl Parse for Arguments {
 //?#################################################################################################
 
 impl Parse for Parameter {
-    fn parse(input: ParseStream) -> Result<Parameter> {
+    fn parse(input: ParseStream) -> SynResult<Parameter> {
         // A single parameter is an identifier followed by a colon and a type
         // It can be mutable or not
         // ex: a: i32 or mut a: i32
@@ -765,7 +819,7 @@ impl Parse for Parameter {
 
 // Here we take advantage of the parser function `parse_terminated`
 impl Parse for Parameters {
-    fn parse(input: ParseStream) -> Result<Parameters> {
+    fn parse(input: ParseStream) -> SynResult<Parameters> {
         // A list of parameters is enclosed in parentheses
         // ex: (a: i32, mut b: i32, c: bool)
 
@@ -810,7 +864,7 @@ impl Parse for Parameters {
 //?#################################################################################################
 
 impl Parse for FnDeclaration {
-    fn parse(input: ParseStream) -> Result<FnDeclaration> {
+    fn parse(input: ParseStream) -> SynResult<FnDeclaration> {
         // A function declaration is the keyword 'fn' followed by an identifier, a list of parameters,
         // an optional return type and a block
 
@@ -866,7 +920,7 @@ impl Parse for FnDeclaration {
 //?#################################################################################################
 
 impl Parse for Statement {
-    fn parse(input: ParseStream) -> Result<Statement> {
+    fn parse(input: ParseStream) -> SynResult<Statement> {
         // Statements can be let bindings, assignments, while loops, expressions or function declarations
 
         let input_str = input.to_string();
@@ -928,7 +982,7 @@ fn end_of_statement(input: ParseStream) -> bool {
     }
 }
 
-fn parse_let_binding(input: ParseStream) -> Result<Statement> {
+fn parse_let_binding(input: ParseStream) -> SynResult<Statement> {
     // a binding is a let keyword followed by an optional mutable, an identifier, an optional type and an optional expression
 
     let input_str = input.to_string();
@@ -977,7 +1031,7 @@ fn parse_let_binding(input: ParseStream) -> Result<Statement> {
     }
 }
 
-fn parse_while_loops(input: ParseStream) -> Result<Statement> {
+fn parse_while_loops(input: ParseStream) -> SynResult<Statement> {
     // a while loop is a while keyword followed by an expression and a block
 
     let input_str = input.to_string();
@@ -1015,7 +1069,7 @@ use syn::punctuated::Punctuated;
 
 // Here we take advantage of the parser function `parse_terminated`
 impl Parse for Block {
-    fn parse(input: ParseStream) -> Result<Block> {
+    fn parse(input: ParseStream) -> SynResult<Block> {
         // blocks are enclosed in braces
         // they contain a list of statements separated by semicolons
         // the last statement can be without a semicolon
@@ -1093,7 +1147,7 @@ impl Parse for Block {
 //?#################################################################################################
 
 impl Parse for Prog {
-    fn parse(input: ParseStream) -> Result<Prog> {
+    fn parse(input: ParseStream) -> SynResult<Prog> {
         // A program is a list of function declarations
         // They are often separated by an empty line, but it is not present in the TokenStream whatsoever
 

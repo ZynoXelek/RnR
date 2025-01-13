@@ -18,6 +18,7 @@ The implemented types are the following:
 ## Operations
 
 The implemented operations are the following:
+
 - Unary Operators
   - **!**: boolean negation
   - **-**: integer negation
@@ -37,6 +38,7 @@ The compiler can be used thanks to its **CLI** which uses the **clap** crate. It
 ### Basic behavior
 
 The default command is the following one:
+
 ```bash
 rnr
 ```
@@ -50,10 +52,13 @@ Here are the possible subcommands you can add to apply other treatments.
 #### Get help on commands
 
 You can have additional information using the following subcommand:
+
 ```bash
 -h
 ```
+
 Or
+
 ```bash
 --help
 ```
@@ -61,10 +66,13 @@ Or
 #### Change the input file
 
 You can change the input file from `main.rs` to any other file by adding this subcommand:
+
 ```bash
 -i <relative_input_path>
 ```
+
 Or
+
 ```bash
 --input <relative_input_path>
 ```
@@ -72,10 +80,13 @@ Or
 #### Dump the generated AST
 
 You can dump the generated Abstract Syntax Tree from the parsed program in a file of your choice by adding the following subcommand:
+
 ```bash
 -a <relative_output_path>
 ```
+
 Or
+
 ```bash
 --ast <relative_output_path>
 ```
@@ -85,10 +96,13 @@ Or
 #### Process type checking
 
 You can process type checking on the parsed result by adding the following subcommand:
+
 ```bash
 -t
 ```
+
 Or
+
 ```bash
 --type_check
 ```
@@ -98,10 +112,13 @@ This process will verify that your input program is formally correct.
 #### Optimize the input program
 
 You can process a program optimization on the parsed result by adding the following subcommand:
+
 ```bash
 -o
 ```
+
 Or
+
 ```bash
 --optimize
 ```
@@ -112,14 +129,19 @@ It requires that the type-check option is used.
 #### Evaluate the parsed program using the RnR VM
 
 You can process the evaluation of the parsed program using the RnR Virtual Machine by adding the following subcommand:
+
 ```bash
 -v
 ```
+
 Or
+
 ```bash
 --vm
 ```
+
 Or
+
 ```bash
 --virtual_machine
 ```
@@ -129,10 +151,13 @@ This process requires that the type-check option is used.
 #### Generate the assembler code
 
 You can generate the assembler code corresponding to the parsed program with the RnR backend by adding the following subcommand:
+
 ```bash
 -c
 ```
+
 Or
+
 ```bash
 --code_gen
 ```
@@ -142,6 +167,7 @@ This process requires that the optimization option is used.
 #### Dump the generated ASM
 
 You can dump the generated ASM from the parsed program in a file of your choice by adding the following subcommand: (It requires that you have used the `-c` or `--code_gen` subcommand)
+
 ```bash
 --asm <relative_output_path>
 ```
@@ -151,10 +177,13 @@ This process requires that the code generation option is used.
 #### Run the generated ASM
 
 You can run the generated ASM from the parsed program by adding the following subcommand: (It requires that you have used the `-c` or `--code_gen` subcommand)
+
 ```bash
 -r
 ```
+
 Or
+
 ```bash
 --run
 ```

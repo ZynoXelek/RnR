@@ -23,6 +23,7 @@ pub enum ParsingContext {
     Type,
     Literal,
     Expr,
+    Array,
     BinOp,
     UnOp,
     Mutable,
@@ -54,6 +55,9 @@ impl fmt::Display for ParsingContext {
             }
             ParsingContext::Expr => {
                 write!(f, "expression")
+            }
+            ParsingContext::Array => {
+                write!(f, "array")
             }
             ParsingContext::BinOp => {
                 write!(f, "binary operator")
@@ -139,6 +143,11 @@ pub enum ParsingError {
         input_context: String,
         parsing_context: ParsingContext,
     },
+    InvalidArraySizeExpr {
+        found: String,
+        input_context: String,
+        parsing_context: ParsingContext,
+    },
 }
 
 impl ParsingError {
@@ -195,6 +204,18 @@ impl ParsingError {
             parsing_context,
         }
     }
+
+    pub fn invalid_arr_size(
+        found: String,
+        input_context: String,
+        parsing_context: ParsingContext,
+    ) -> Self {
+        ParsingError::InvalidArraySizeExpr {
+            found,
+            input_context,
+            parsing_context,
+        }
+    }
 }
 
 // Needed to convert ParsingError to SynError in parse.rs
@@ -227,6 +248,11 @@ impl From<ParsingError> for SynError {
                 parsing_context,
             } => SynError::new_spanned(input_context, message),
             ParsingError::UnexpectedEndOfBlock {
+                input_context,
+                parsing_context,
+            } => SynError::new_spanned(input_context, message),
+            ParsingError::InvalidArraySizeExpr {
+                found,
                 input_context,
                 parsing_context,
             } => SynError::new_spanned(input_context, message),
@@ -301,6 +327,17 @@ impl fmt::Display for ParsingError {
                     input_context, parsing_context
                 )
             }
+            ParsingError::InvalidArraySizeExpr {
+                found,
+                input_context,
+                parsing_context,
+            } => {
+                write!(
+                    f,
+                    "Invalid array size expression: found '{}' in input '{}' during {} parsing (Size expression must be a positive and constant integer)",
+                    found, input_context, parsing_context
+                )
+            }
         }
     }
 }
@@ -322,7 +359,8 @@ pub enum TypeError {
     },
     MainNotFound,
     MainWithParameters,
-    MainWithInvalidType { // In Rust, a main function should return either () or Result<(), E>, where E implements the std::error::Error trait.
+    MainWithInvalidType {
+        // In Rust, a main function should return either () or Result<(), E>, where E implements the std::error::Error trait.
         found: Type,
     },
     MainReturnsUninit,
@@ -496,7 +534,11 @@ impl TypeError {
         }
     }
 
-    pub fn if_blocks_init_type_mismatch(var_identifier: String, then_type: TypeVal, else_type: TypeVal) -> Self {
+    pub fn if_blocks_init_type_mismatch(
+        var_identifier: String,
+        then_type: TypeVal,
+        else_type: TypeVal,
+    ) -> Self {
         TypeError::IfBlocksInitTypeMismatch {
             var_identifier,
             then_type,
@@ -559,7 +601,11 @@ impl fmt::Display for TypeError {
                 write!(f, "Main function should not have any parameters")
             }
             TypeError::MainWithInvalidType { found } => {
-                write!(f, "Main function should return unit type, found '{}'", found)
+                write!(
+                    f,
+                    "Main function should return unit type, found '{}'",
+                    found
+                )
             }
             TypeError::MainReturnsUninit => {
                 write!(f, "Main function returns uninitialized variable")
@@ -615,7 +661,11 @@ impl fmt::Display for TypeError {
                     expected, parameter.id, func.get_signature_repr(0), found
                 )
             }
-            TypeError::InvalidFunctionReturnType { func, expected, found } => {
+            TypeError::InvalidFunctionReturnType {
+                func,
+                expected,
+                found,
+            } => {
                 write!(
                     f,
                     "Invalid function return type: expected type '{}' for function '{}', but found type '{}'",

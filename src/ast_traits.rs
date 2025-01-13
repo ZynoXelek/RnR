@@ -19,6 +19,38 @@ fn get_tabs(nb_tabs: usize) -> String {
 
 //?#################################################################################################
 //?#                                                                                               #
+//?#                                        'Array' Type                                           #
+//?#                                                                                               #
+//?#################################################################################################
+
+impl Array {
+    pub fn new(expressions: Vec<Expr>) -> Self {
+        Array {
+            values: expressions.clone(),
+            size: expressions.len(),
+        }
+    }
+}
+
+impl fmt::Display for Array {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let values = &self.values;
+        let size = self.size;
+
+        write!(f, "[")?;
+        for index in 0..size {
+            if index < size {
+                write!(f, "{}, ", values[index])?;
+            } else {
+                write!(f, "{}", values[index])?;
+            }
+        }
+        write!(f, "]")
+    }
+}
+
+//?#################################################################################################
+//?#                                                                                               #
 //?#                                         'Type' Type                                           #
 //?#                                                                                               #
 //?#################################################################################################
@@ -32,8 +64,11 @@ impl<T: Into<Literal>> From<T> for Type {
             Literal::Bool(_) => Type::Bool,
             Literal::Int(_) => Type::I32,
             Literal::String(_) => Type::String,
-            Literal::Array(arr, size) => Type::Array(Box::new(Type::from(arr[0].clone())), size),
-            // _ => unimplemented!("Type::from for {:?}", lit),
+            Literal::Array(_) => {
+                // By default, since we need the type checker to infer the type of an array,
+                // we return the GenericArray type
+                Type::GenericArray
+            } // _ => unimplemented!("Type::from for {:?}", lit),
         }
     }
 }
@@ -44,7 +79,7 @@ impl Type {
     pub fn new(typename: &str) -> Self {
         // Array support
         // using regex to match the array type
-        let r = regex::Regex::new(r"^\[(?P<type>.+);\s*(?P<size>\d+)\]$").unwrap();
+        let r = regex::Regex::new(r"^\[(?P<type>.+)\s*;\s*(?P<size>\d+)\]$").unwrap();
         if let Some(caps) = r.captures(typename) {
             // We are considering an array type
 
@@ -66,7 +101,7 @@ impl Type {
     pub fn is_valid_typename(typename: &str) -> bool {
         // Array support
         // using regex to match the array type
-        let r = regex::Regex::new(r"^\[(?P<type>.+);\s*(?P<size>\d+)\]$").unwrap();
+        let r = regex::Regex::new(r"^\[(?P<type>.+)\s*;\s*(?P<size>\d+)\]$").unwrap();
         if let Some(caps) = r.captures(typename) {
             // We are considering an array type
 
@@ -89,13 +124,14 @@ impl Type {
 impl fmt::Display for Type {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
+            Type::GenericType => write!(f, "_"),
             Type::I32 => write!(f, "i32"),
             Type::Bool => write!(f, "bool"),
             Type::String => write!(f, "String"),
             Type::Unit => write!(f, "()"),
             Type::Array(ty, size) => write!(f, "[{}; {}]", ty, size),
             Type::GenericArray => write!(f, "[_; _]"), // Not for use, only for display
-            // _ => unimplemented!("Type::fmt for {:?}", self),
+                                                       // _ => unimplemented!("Type::fmt for {:?}", self),
         }
     }
 }
@@ -130,10 +166,9 @@ impl From<String> for Literal {
     }
 }
 
-impl From<Vec<Literal>> for Literal {
-    fn from(a: Vec<Literal>) -> Self {
-        let size = a.len();
-        Literal::Array(a, size)
+impl From<Array> for Literal {
+    fn from(a: Array) -> Self {
+        Literal::Array(a)
     }
 }
 
@@ -175,15 +210,6 @@ impl From<Literal> for String {
     }
 }
 
-impl From<Literal> for Vec<Literal> {
-    fn from(lit: Literal) -> Self {
-        match lit {
-            Literal::Array(arr, size) => arr,
-            _ => panic!("cannot get array from {:?}", lit),
-        }
-    }
-}
-
 impl Literal {
     pub fn get_int(&self) -> i32 {
         match self {
@@ -203,13 +229,6 @@ impl Literal {
         match self {
             Literal::String(s) => s.clone(),
             _ => panic!("cannot get string from {:?}", self),
-        }
-    }
-
-    pub fn get_array(&self) -> Vec<Literal> {
-        match self {
-            Literal::Array(arr, size) => arr.clone(),
-            _ => panic!("cannot get array from {:?}", self),
         }
     }
 
@@ -236,17 +255,7 @@ impl fmt::Display for Literal {
             Literal::Bool(b) => write!(f, "{}", b),
             Literal::Int(i) => write!(f, "{}", i),
             Literal::String(s) => write!(f, "\"{}\"", s),
-            Literal::Array(arr, size) => {
-                write!(f, "[")?;
-                for index in 0..*size {
-                    if index < *size - 1 {
-                        write!(f, "{}, ", arr[index])?;
-                    } else {
-                        write!(f, "{}", arr[index])?;
-                    }
-                }
-                write!(f, "]")
-            }
+            Literal::Array(arr) => write!(f, "{}", arr),
             Literal::Unit => write!(f, "()"),
             // _ => unimplemented!("Literal::fmt for {:?}", self),
         }
@@ -355,10 +364,15 @@ impl Expr {
         self._get_string_repr_with_param(indent, false, 0)
     }
 
-    fn _get_string_repr_with_param(&self, indent: usize, force_multiline: bool, first_indent: usize) -> String {
+    fn _get_string_repr_with_param(
+        &self,
+        indent: usize,
+        force_multiline: bool,
+        first_indent: usize,
+    ) -> String {
         // Gets the string representation of the expression with the desired number of tabs
         let mut s = String::new();
-        
+
         let tabs = get_tabs(first_indent);
         s.push_str(&tabs);
 
@@ -369,13 +383,26 @@ impl Expr {
             Expr::Lit(l) => expr_repr.push_str(&format!("{}", l)),
             Expr::BinOp(op, left, right) => match op {
                 BinOp::Get => {
-                    expr_repr.push_str(&format!("{}[{}]", left.get_string_repr(indent), right.get_string_repr(indent)));
+                    expr_repr.push_str(&format!(
+                        "{}[{}]",
+                        left.get_string_repr(indent),
+                        right.get_string_repr(indent)
+                    ));
                 }
-                _ => expr_repr.push_str(&format!("{} {} {}", left.get_string_repr(indent), op, right.get_string_repr(indent))),
+                _ => expr_repr.push_str(&format!(
+                    "{} {} {}",
+                    left.get_string_repr(indent),
+                    op,
+                    right.get_string_repr(indent)
+                )),
             },
-            Expr::UnOp(op, operand) => expr_repr.push_str(&format!("{}{}", op, operand.get_string_repr(indent))),
+            Expr::UnOp(op, operand) => {
+                expr_repr.push_str(&format!("{}{}", op, operand.get_string_repr(indent)))
+            }
             Expr::Par(e) => expr_repr.push_str(&format!("({})", e.get_string_repr(indent))),
-            Expr::Call(id, args) => expr_repr.push_str(&format!("{}{}", id, args.get_string_repr(indent))),
+            Expr::Call(id, args) => {
+                expr_repr.push_str(&format!("{}{}", id, args.get_string_repr(indent)))
+            }
             Expr::IfThenElse(cond, then_block, else_block) => {
                 let multiline = self.requires_multiple_lines() || force_multiline;
 
@@ -402,19 +429,20 @@ impl Expr {
                                 second_if_expr._get_string_repr_with_param(indent, multiline, 0)
                             ));
                         } else {
-                            expr_repr
-                                .push_str(&format!(" else {}", else_block._get_string_repr_with_param(indent, multiline)));
+                            expr_repr.push_str(&format!(
+                                " else {}",
+                                else_block._get_string_repr_with_param(indent, multiline)
+                            ));
                         }
                     } else {
-                        expr_repr
-                            .push_str(&format!(" else {}", else_block._get_string_repr_with_param(indent, multiline)));
+                        expr_repr.push_str(&format!(
+                            " else {}",
+                            else_block._get_string_repr_with_param(indent, multiline)
+                        ));
                     }
                 }
             }
-            Expr::Block(block) => {
-                expr_repr.push_str(&format!("{}", block.get_string_repr(indent)))
-            }
-            // _ => unimplemented!("Expr::fmt for {:?}", self),
+            Expr::Block(block) => expr_repr.push_str(&format!("{}", block.get_string_repr(indent))), // _ => unimplemented!("Expr::fmt for {:?}", self),
         }
 
         s.push_str(&expr_repr);
@@ -463,7 +491,7 @@ impl BinOp {
             BinOp::Le => 3,
             // Array operations
             BinOp::Get => 8, // Highest priority (above unary operators as well)
-            // _ => unimplemented!("BinOp::priority for {:?}", self),
+                             // _ => unimplemented!("BinOp::priority for {:?}", self),
         }
     }
 
@@ -492,7 +520,7 @@ impl fmt::Display for BinOp {
             BinOp::Le => "<=",
             BinOp::Ge => ">=",
             BinOp::Get => "[]", // Not made to be used, since the binary operation will be responsible of correctly displaying it
-            // _ => unimplemented!("BinOp::fmt for {:?}", self),
+                                // _ => unimplemented!("BinOp::fmt for {:?}", self),
         };
         write!(f, "{}", s)
     }
@@ -629,7 +657,11 @@ impl Statement {
                 }
             }
             Statement::Assign(left, right) => {
-                stmt_repr.push_str(&format!("{} = {}", left.get_string_repr(indent), right.get_string_repr(indent)));
+                stmt_repr.push_str(&format!(
+                    "{} = {}",
+                    left.get_string_repr(indent),
+                    right.get_string_repr(indent)
+                ));
             }
             Statement::While(condition, block) => {
                 let multiline = self.requires_multiple_lines();
@@ -922,7 +954,10 @@ impl FnDeclaration {
         let multiline = Statement::Fn(self.clone()).requires_multiple_lines();
 
         let mut fn_repr = self.get_signature_repr(signature_indent);
-        fn_repr.push_str(&format!(" {}", self.body._get_string_repr_with_param(indent, multiline)));
+        fn_repr.push_str(&format!(
+            " {}",
+            self.body._get_string_repr_with_param(indent, multiline)
+        ));
 
         fn_repr
     }
