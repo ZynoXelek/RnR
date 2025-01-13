@@ -31,8 +31,56 @@ impl Array {
         }
     }
 
+    pub fn get_size(&self) -> usize {
+        self.size
+    }
+
+    pub fn get_values(&self) -> Vec<Expr> {
+        self.values.clone()
+    }
+
+    pub fn get_value(&self, index: usize) -> Expr {
+        self.values[index].clone()
+    }
+
     pub fn as_tuple(&self) -> (Vec<Expr>, usize) {
         (self.values.clone(), self.size)
+    }
+
+    // To verify if an identifier is contained in the Array
+    pub fn contains_identifier(&self) -> bool {
+        for expr in &self.values {
+            if expr.contains_identifier() {
+                return true;
+            }
+        }
+        false
+    }
+
+    pub fn modify(&mut self, index: usize, new_value: Expr) {
+        self.values[index] = new_value;
+    }
+
+    pub fn modify_seq(&mut self, indexes: &[usize], new_value: Expr) -> Result<(), String> {
+        if indexes.is_empty() {
+            // Nothing to do here
+            Ok(())
+        } else if indexes.len() == 1 {
+            self.modify(indexes[0], new_value);
+            Ok(())
+        } else {
+            let index = indexes[0];
+            let new_array = self.get_value(index).clone();
+    
+            match new_array {
+                Expr::Lit(Literal::Array(mut array)) => {
+                    array.modify_seq(&indexes[1..], new_value)?;
+                    self.modify(index, Expr::Lit(Literal::Array(array)));
+                    Ok(())
+                }
+                _ => Err("Cannot modify a non-array value".to_string()),
+            }
+        }
     }
 }
 
@@ -267,6 +315,16 @@ impl Literal {
             _ => false,
         }
     }
+
+    // To verify if an identifier is contained in the Literal
+    pub fn contains_identifier(&self) -> bool {
+        match self {
+            Literal::Array(arr) => {
+                arr.contains_identifier()
+            }
+            _ => false,
+        }
+    }
 }
 
 impl fmt::Display for Literal {
@@ -332,6 +390,27 @@ impl Expr {
         }
     }
 
+    // To verify if an identifier is contained in the Expr
+    pub fn contains_identifier(&self) -> bool {
+        match self {
+            Expr::Lit(lit) => lit.contains_identifier(),
+            Expr::Ident(_) => true,
+            Expr::BinOp(_, left, right) => left.contains_identifier() || right.contains_identifier(),
+            Expr::UnOp(_, operand) => operand.contains_identifier(),
+            Expr::Par(e) => e.contains_identifier(),
+            Expr::Call(_, _) => true, // A call requires an identifier to call the function,
+            Expr::IfThenElse(cond, then_block, else_block) => {
+                cond.contains_identifier()
+                    || then_block.contains_identifier()
+                    || match else_block {
+                        Some(block) => block.contains_identifier(),
+                        None => false,
+                    }
+            }
+            Expr::Block(block) => block.contains_identifier(),
+        }
+    }
+
     // Function to extract a variable identifier from an expression
     // It can be used for direct Ident expressions 'a' but it is not very useful
     // However, it can be used for array in this kind of expressions: a[0][1]
@@ -344,6 +423,24 @@ impl Expr {
                 left.extract_var_identifier()
             }
             _ => None, // There is no unique identifier here
+        }
+    }
+
+    // This function extracts the sequence of expression in an array access
+    // For instance: a[1 + 1][0] ---> [1 + 1, 0]
+    pub fn extract_get_sequence(&self) -> Vec<Expr> {
+        let mut current_get_sequence = Vec::new();
+        self._extract_get_sequence(&mut current_get_sequence)
+    }
+
+    fn _extract_get_sequence(&self, current_get_sequence: &mut Vec<Expr>) -> Vec<Expr> {
+        match self {
+            Expr::BinOp(BinOp::Get, left, right) => {
+                current_get_sequence.push(*right.clone());
+                let left = *left.clone();
+                left._extract_get_sequence(current_get_sequence)
+            }
+            _ => current_get_sequence.clone(), // There is no unique identifier here
         }
     }
 
@@ -626,6 +723,26 @@ impl Statement {
         self == &empty
     }
 
+    // To verify whether the statement contains an identifier or not
+    pub fn contains_identifier(&self) -> bool {
+        match self {
+            Statement::Let(_, _, _, expr) => match expr {
+                Some(e) => e.contains_identifier(),
+                None => false,
+            },
+            Statement::Assign(left, right) => {
+                let res = left.contains_identifier() || right.contains_identifier();
+                if !res {
+                    eprintln!("/!\\ WARNING: Assignment statement does not contain any identifier /!\\");
+                }
+                res
+            },
+            Statement::While(cond, block) => cond.contains_identifier() || block.contains_identifier(),
+            Statement::Expr(expr) => expr.contains_identifier(),
+            Statement::Fn(fn_decl) => false, // The declaration of a function, similarly to a var, is not an identifier itself
+        }
+    }
+
     // This function is used to check if a statement requires a semi colon at the end of its line or not
     // If the statement is the last one of a block, it ignores this function and uses the next one
     pub fn requires_semi_colon(&self) -> bool {
@@ -764,6 +881,16 @@ impl Block {
     // When it is needed to check if a block is a unit type
     pub fn is_unit(&self) -> bool {
         self.statements.is_empty() || self.semi // A block is of unit type if it is empty or ends with a semi colon
+    }
+    
+    // To verify if an identifier is contained in the Block
+    pub fn contains_identifier(&self) -> bool {
+        for stmt in &self.statements {
+            if stmt.contains_identifier() {
+                return true;
+            }
+        }
+        false
     }
 
     // This function is used to check whether a block requires multiple lines to be displayed

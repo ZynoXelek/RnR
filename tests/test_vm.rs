@@ -1,4 +1,4 @@
-use rnr::ast::{Block, Expr, Literal, Prog};
+use rnr::ast::{Array, Block, Expr, Literal, Prog};
 use rnr::common::parse_test;
 use rnr::vm::Val;
 
@@ -138,6 +138,20 @@ mod test_vm {
     }
 
     #[test]
+    fn test_block_assignments() {
+        let v = parse_test::<Block, Val>(
+            "
+            {
+                let mut a: i32 = 1;
+                a = a + 2;
+                a = 7;
+                a
+            }",
+        );
+        assert_eq!(v.unwrap().get_int().unwrap(), 7);
+    }
+
+    #[test]
     fn test_expr_if_then_else() {
         let v = parse_test::<Block, Val>(
             "
@@ -171,6 +185,218 @@ mod test_vm {
     }
 
     #[test]
+    fn test_empty_array_eval() {
+        let v = parse_test::<Block, Val>(
+            "
+            {
+                let a: [i32; 0] = [];
+                a
+            }
+            ",
+        );
+
+        let return_arr = Array::new(vec![]);
+        assert_eq!(v.unwrap().get_array().unwrap(), return_arr);
+    }
+
+    #[test]
+    fn test_empty_array_eval_late_init() {
+        let v = parse_test::<Block, Val>(
+            "
+            {
+                let a: [i32; 0];
+                a = [];
+                a
+            }
+            ",
+        );
+
+        let return_arr = Array::new(vec![]);
+        assert_eq!(v.unwrap().get_array().unwrap(), return_arr);
+    }
+
+    #[test]
+    fn test_array_inner_eval_is_any() {
+        let v = parse_test::<Block, Val>(
+            "
+            {
+                let a: [_; 3] = [1, 2, 3];
+                a
+            }
+            ",
+        );
+
+        let return_arr = Array::new(vec![
+            Literal::Int(1).into(),
+            Literal::Int(2).into(),
+            Literal::Int(3).into(),
+        ]);
+        assert_eq!(v.unwrap().get_array().unwrap(), return_arr);
+    }
+
+    #[test]
+    fn test_array_inner_eval_is_any_late_init() {
+        let v = parse_test::<Block, Val>(
+            "
+            {
+                let a: [_; 3];
+                a = [1, 2, 3];
+                a
+            }
+            ",
+        );
+
+        let return_arr = Array::new(vec![
+            Literal::Int(1).into(),
+            Literal::Int(2).into(),
+            Literal::Int(3).into(),
+        ]);
+        assert_eq!(v.unwrap().get_array().unwrap(), return_arr);
+    }
+
+    #[test]
+    fn test_array_eval_1() {
+        let v = parse_test::<Block, Val>(
+            "
+            {
+                let a = [1, 2, 3];
+                a
+            }
+            ",
+        );
+
+        let return_arr = Array::new(vec![
+            Literal::Int(1).into(),
+            Literal::Int(2).into(),
+            Literal::Int(3).into(),
+        ]);
+        assert_eq!(v.unwrap().get_array().unwrap(), return_arr);
+    }
+
+    #[test]
+    fn test_array_eval_2() {
+        let v = parse_test::<Block, Val>(
+            "
+            {
+                let a = [[1, 2], [3, 4], [5, 6]];
+                a
+            }
+            ",
+        );
+
+        let return_arr = Array::new(vec![
+            Array::new(vec![Literal::Int(1).into(), Literal::Int(2).into()]).into(),
+            Array::new(vec![Literal::Int(3).into(), Literal::Int(4).into()]).into(),
+            Array::new(vec![Literal::Int(5).into(), Literal::Int(6).into()]).into(),
+        ]);
+        assert_eq!(v.unwrap().get_array().unwrap(), return_arr);
+    }
+
+    #[test]
+    fn test_array_eval_3() {
+        let v = parse_test::<Block, Val>(
+            "
+            {
+                let a = [
+                    [
+                        [true, false, true],
+                        [false, false, false],
+                    ],
+                    [
+                        [true, true, true],
+                        [false, false, true],
+                    ],
+                ];
+                a
+            }
+            ",
+        );
+
+        let return_arr = Array::new(vec![
+            Array::new(vec![
+                Array::new(vec![
+                    Literal::Bool(true).into(),
+                    Literal::Bool(false).into(),
+                    Literal::Bool(true).into(),
+                ])
+                .into(),
+                Array::new(vec![
+                    Literal::Bool(false).into(),
+                    Literal::Bool(false).into(),
+                    Literal::Bool(false).into(),
+                ])
+                .into(),
+            ])
+            .into(),
+            Array::new(vec![
+                Array::new(vec![
+                    Literal::Bool(true).into(),
+                    Literal::Bool(true).into(),
+                    Literal::Bool(true).into(),
+                ])
+                .into(),
+                Array::new(vec![
+                    Literal::Bool(false).into(),
+                    Literal::Bool(false).into(),
+                    Literal::Bool(true).into(),
+                ])
+                .into(),
+            ])
+            .into(),
+        ]);
+        assert_eq!(v.unwrap().get_array().unwrap(), return_arr);
+    }
+
+    #[test]
+    fn test_array_get_1() {
+        let v = parse_test::<Block, Val>(
+            "
+            {
+                let a = [1, 2, 3];
+                a[0]
+            }
+            ",
+        );
+
+        let get_eval = Literal::Int(1);
+        assert_eq!(v.unwrap().get_literal().unwrap(), get_eval);
+    }
+
+    #[test]
+    fn test_array_get_2() {
+        let v = parse_test::<Block, Val>(
+            "
+            {
+                let a = [[true, false, false], [false, false, false]];
+                a[0]
+            }
+            ",
+        );
+
+        let get_eval = Literal::Array(Array::new(vec![
+            Literal::Bool(true).into(),
+            Literal::Bool(false).into(),
+            Literal::Bool(false).into(),
+        ]));
+        assert_eq!(v.unwrap().get_literal().unwrap(), get_eval);
+    }
+
+    #[test]
+    fn test_array_get_3() {
+        let v = parse_test::<Block, Val>(
+            "
+            {
+                let a = [[true, false, false], [false, false, false]];
+                a[0][1]
+            }
+            ",
+        );
+
+        let get_eval = Literal::Bool(false);
+        assert_eq!(v.unwrap().get_literal().unwrap(), get_eval);
+    }
+
+    #[test]
     fn test_array() {
         let v = parse_test::<Block, Val>(
             "
@@ -187,7 +413,7 @@ mod test_vm {
     }
 
     #[test]
-    fn test_array_assignment() {
+    fn test_array_assignment_1() {
         let v = parse_test::<Block, Val>(
             "
             {
@@ -198,7 +424,160 @@ mod test_vm {
             ",
         );
 
-        assert_eq!(v.unwrap().get_int().unwrap(), 4);
+        let get_eval = Literal::Int(4);
+        assert_eq!(v.unwrap().get_literal().unwrap(), get_eval);
+    }
+
+    #[test]
+    fn test_array_assignment_2() {
+        let v = parse_test::<Block, Val>(
+            "
+            {
+                let mut a = [[1, 2], [3, 4], [5, 6]];
+                a[1][1] = 7;
+                a[2] = [8, 9];
+                a
+            }
+            ",
+        );
+
+        let get_eval = Literal::Array(Array::new(vec![
+            Array::new(vec![Literal::Int(1).into(), Literal::Int(2).into()]).into(),
+            Array::new(vec![Literal::Int(3).into(), Literal::Int(7).into()]).into(),
+            Array::new(vec![Literal::Int(8).into(), Literal::Int(9).into()]).into(),
+        ]));
+        assert_eq!(v.unwrap().get_literal().unwrap(), get_eval);
+    }
+
+    #[test]
+    fn test_array_with_expr() {
+        let v = parse_test::<Block, Val>(
+            "
+            {
+                fn f(x: i32) -> i32 {
+                    x * 2
+                }
+
+                let b = 2;
+                let c = f(b);
+                let a = [1, b, c];
+                a
+            }
+            ",
+        );
+
+        let get_eval = Literal::Array(Array::new(vec![
+            Literal::Int(1).into(),
+            Literal::Int(2).into(),
+            Literal::Int(4).into(),
+        ]));
+        assert_eq!(v.unwrap().get_literal().unwrap(), get_eval);
+    }
+
+    #[test]
+    fn test_array_with_expr_alt() {
+        let v = parse_test::<Block, Val>(
+            "
+            {
+                let b = 2;
+                let a = [b; 4];
+                a
+            }
+            ",
+        );
+
+        let get_eval = Literal::Array(Array::new(vec![
+            Literal::Int(2).into(),
+            Literal::Int(2).into(),
+            Literal::Int(2).into(),
+            Literal::Int(2).into(),
+        ]));
+        assert_eq!(v.unwrap().get_literal().unwrap(), get_eval);
+    }
+
+    #[test]
+    fn test_array_with_simple_func() {
+        let v = parse_test::<Block, Val>(
+            "
+            {
+                fn new_arr() -> [i32; 3] {
+                    [1, 2, 3]
+                }
+                
+                let a = new_arr();
+                a
+            }
+            ",
+        );
+
+        let get_eval = Literal::Array(Array::new(vec![
+            Literal::Int(1).into(),
+            Literal::Int(2).into(),
+            Literal::Int(3).into(),
+        ]));
+        assert_eq!(v.unwrap().get_literal().unwrap(), get_eval);
+    }
+
+    #[test]
+    fn test_array_with_funcs_1() {
+        let v = parse_test::<Block, Val>(
+            "
+            {
+                fn new_arr() -> [i32; 3] {
+                    [1, 2, 3]
+                }
+
+                fn mul_arr(a: [i32; 3], b: i32) -> [i32; 3] {
+                    [a[0] * b, a[1] * b, a[2] * b]
+                }
+
+                let a = new_arr(); // Should be [1, 2, 3]
+                let b = mul_arr(a, 2); // Should be [2, 4, 6]
+                b
+            }
+            ",
+        );
+
+        let get_eval = Literal::Array(Array::new(vec![
+            Literal::Int(2).into(),
+            Literal::Int(4).into(),
+            Literal::Int(6).into(),
+        ]));
+        assert_eq!(v.unwrap().get_literal().unwrap(), get_eval);
+    }
+
+    #[test]
+    fn test_array_with_funcs_2() {
+        let v = parse_test::<Block, Val>(
+            "
+            {
+                fn new_arr() -> [i32; 3] {
+                    [1, 2, 3]
+                }
+
+                fn mul_arr(a: [i32; 3], b: i32) -> [i32; 3] {
+                    [a[0] * b, a[1] * b, a[2] * b]
+                }
+
+                fn mod_arr(mut a: [i32; 3]) -> [i32; 3] {
+                    a[0] = a[0] + if a[0] > 2 { a[1] } else { a[2] };
+                    a
+                }
+
+                let a = new_arr(); // Should be [1, 2, 3]
+                let b = mul_arr(a, 2); // Should be [2, 4, 6]
+                let c = mod_arr(b); // Should be [8, 4, 6]
+                c
+            }
+            ",
+        );
+
+        let get_eval = Literal::Array(Array::new(vec![
+            Literal::Int(8).into(),
+            Literal::Int(4).into(),
+            Literal::Int(6).into(),
+        ]));
+        assert_eq!(v.unwrap().get_literal().unwrap(), get_eval);
     }
 
     #[test]

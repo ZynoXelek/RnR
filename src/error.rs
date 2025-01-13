@@ -817,7 +817,7 @@ pub enum EvalError {
     },
     DivisionByZero,
     IndexOutOfBounds {
-        index: usize,
+        index: i32,
         size: usize,
     },
     TypeError(TypeError),
@@ -866,7 +866,7 @@ impl EvalError {
     pub fn division_by_zero() -> Self {
         EvalError::DivisionByZero
     }
-    pub fn index_out_of_bounds(index: usize, size: usize) -> Self {
+    pub fn index_out_of_bounds(index: i32, size: usize) -> Self {
         EvalError::IndexOutOfBounds { index, size }
     }
     pub fn type_error(error: TypeError) -> Self {

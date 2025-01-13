@@ -4,8 +4,8 @@ use std::collections::HashMap;
 use crate::ast::{
     Arguments, BinOp, Block, Expr, FnDeclaration, Literal, Parameters, Prog, Statement, Type, UnOp,
 };
-use crate::common::Optimize;
-use crate::error::Error; //TODO: use custom error
+use crate::common::{Optimize, Eval};
+use crate::error::{Error, EvalError}; //TODO: use custom error
 use crate::intrinsics::*;
 use crate::vm::Val;
 
@@ -1516,29 +1516,32 @@ impl Optimizer {
         // For instance, 3 + 4 + 5 + a => 12 + a
         // However, 3 + a + 4 + 5 => 12 + a as well (not supported yet)
 
-        // If the operands are literals, we can evaluate the operation, else we just return the binop with the optimized operands.
-        match (left_opt.clone(), right_opt.clone()) {
-            (Expr::Lit(lit1), Expr::Lit(lit2)) => {
-                // Use the vm to evaluate it
-                let val1 = lit1.into();
-                let val2 = lit2.into();
-                let result = binop.eval(val1, val2);
+        let mut final_expr = Expr::BinOp(binop, Box::new(left_opt.clone()), Box::new(right_opt.clone()));
 
-                // Now we need to convert it as an Expr
-                match result {
-                    Ok(val) => {
-                        let lit = Literal::from(val);
-                        let expr = Expr::Lit(lit);
-                        Ok(OptExpr::new(expr, complete_use)) // We keep the same operand use, which should therefore be a new() one.
+        // If the operands are literals, we can evaluate the operation, else we just return the binop with the optimized operands.
+        if !left_opt.contains_identifier() && !right_opt.contains_identifier() {
+            // Use the vm to evaluate it
+            let val1: Result<Val, EvalError> = left_opt.eval();
+            let val2: Result<Val, EvalError> = right_opt.eval();
+            match (val1, val2) {
+                (Ok(val1), Ok(val2)) => {
+                    let result = binop.eval(val1, val2);
+        
+                    // Now we need to convert it as an Expr
+                    match result {
+                        Ok(val) => {
+                            let lit = Literal::from(val);
+                            final_expr = Expr::Lit(lit); // Simplifies the final expression if it can
+                        }
+                        Err(e) => {}
                     }
-                    Err(e) => Err(e.to_string()), //TODO: Use custom error
-                }
-            }
-            _ => {
-                let expr = Expr::BinOp(binop, Box::new(left_opt), Box::new(right_opt));
-                Ok(OptExpr::new(expr, complete_use))
+                },
+                _ => {}
             }
         }
+
+        // If the operands could not be evaluated separately, we keep the binop with the optimized operands.
+        Ok(OptExpr::new(final_expr, complete_use))
     }
 
     fn optimize_par(&mut self, inner: Expr) -> Result<OptExpr, Error> {

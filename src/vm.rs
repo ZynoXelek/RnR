@@ -2,7 +2,8 @@ use core::fmt;
 use std::collections::HashMap;
 
 use crate::ast::{
-    Arguments, BinOp, Block, Expr, FnDeclaration, Literal, Parameters, Prog, Statement, Type, UnOp,
+    Arguments, Array, BinOp, Block, Expr, FnDeclaration, Literal, Parameters, Prog, Statement,
+    Type, UnOp,
 };
 use crate::common::Eval;
 use crate::error::EvalError;
@@ -65,8 +66,8 @@ impl From<String> for Val {
     }
 }
 
-impl From<Vec<Literal>> for Val {
-    fn from(val: Vec<Literal>) -> Self {
+impl From<Array> for Val {
+    fn from(val: Array) -> Self {
         Val::Lit(val.into())
     }
 }
@@ -101,11 +102,11 @@ impl From<Val> for String {
     }
 }
 
-impl From<Val> for Vec<Literal> {
+impl From<Val> for Array {
     fn from(val: Val) -> Self {
         match val {
-            Val::Lit(Literal::Array(arr, size)) => arr,
-            Val::Mut(val) => val.get_literal().unwrap().into(),
+            Val::Lit(Literal::Array(arr)) => arr,
+            Val::Mut(val) => val.get_array().unwrap(),
             _ => panic!("cannot get array from {:?}", val),
         }
     }
@@ -161,12 +162,12 @@ impl Val {
         }
     }
 
-    pub fn get_array(&self) -> Result<Vec<Literal>, EvalError> {
+    pub fn get_array(&self) -> Result<Array, EvalError> {
         match self {
-            Val::Lit(Literal::Array(arr, size)) => Ok(arr.clone()),
+            Val::Lit(Literal::Array(arr)) => Ok(arr.clone()),
             Val::Mut(val) => val.get_array(),
             _ => Err(EvalError::invalid_extraction(
-                Type::GenericArray,
+                Type::Array(Box::new(Type::Any), 0),
                 Type::from(self.clone()),
             )), // Not the best printing...
         }
@@ -255,16 +256,6 @@ impl BinOp {
                 (Literal::String(l), Literal::String(r)) => Ok(Val::from(l <= r)),
                 _ => Err(EvalError::binary_operation_error(*self, left, right)),
             },
-            // Array operations
-            BinOp::Get => match (left_lit, right_lit) {
-                (Literal::Array(arr, size), Literal::Int(i)) => {
-                    if i < 0 || i as usize >= size {
-                        return Err(EvalError::index_out_of_bounds(i as usize, size));
-                    }
-                    Ok(Val::from(arr[i as usize].clone()))
-                }
-                _ => Err(EvalError::binary_operation_error(*self, left, right)),
-            },
             _ => unimplemented!("BinOp::eval for {:?}", self),
         }
     }
@@ -288,7 +279,7 @@ impl UnOp {
                 Literal::Bool(b) => Ok(Val::from(!b)),
                 _ => Err(EvalError::unary_operation_error(*self, operand_clone)),
             },
-            _ => unimplemented!("UnOp::eval for {:?}", self),
+            // _ => unimplemented!("UnOp::eval for {:?}", self),
         }
     }
 }
@@ -445,20 +436,45 @@ impl VM {
         Err(EvalError::variable_not_found(name.to_string()))
     }
 
-    // Modify an array element
-    fn modify_array_value(&mut self, name: &str, index: usize, val: Val) -> Result<(), EvalError> {
+    // This functions tries to set a value to a defined array, at the given indexes
+    fn set_array_value(
+        &mut self,
+        name: &str,
+        idx_sequence: Vec<usize>,
+        val: Val,
+    ) -> Result<Val, EvalError> {
         for env in self.var_env.iter_mut().rev() {
             if let Some(v) = env.get_mut(name) {
-                let mut array = v.get_array().unwrap();
-                array[index] = val.get_literal().unwrap();
-                self.set_var(name, Val::from(array))?;
+                let mut arr = v.get_array()?.clone();
+                let val_expr = Expr::Lit(val.get_literal()?);
 
-                // Returns unit value
-                return Ok(());
+                // convert the Vec<usize> to a &[usize]
+                let idx_sequence = idx_sequence.as_slice();
+
+                let _ = arr.modify_seq(idx_sequence, val_expr);
+
+                *v = Val::from(arr);
+                return Ok(v.clone());
             }
         }
         Err(EvalError::variable_not_found(name.to_string()))
     }
+
+    // Modify an array element
+    //TODO
+    // fn modify_array_value(&mut self, name: &str, index: usize, val: Val) -> Result<(), EvalError> {
+    //     for env in self.var_env.iter_mut().rev() {
+    //         if let Some(v) = env.get_mut(name) {
+    //             let mut array = v.get_array().unwrap();
+    //             array[index] = val.get_literal().unwrap();
+    //             self.set_var(name, Val::from(array))?;
+
+    //             // Returns unit value
+    //             return Ok(());
+    //         }
+    //     }
+    //     Err(EvalError::variable_not_found(name.to_string()))
+    // }
 
     fn define_func(&mut self, func: &FnDeclaration) -> Result<(), EvalError> {
         let name = func.id.clone();
@@ -535,12 +551,31 @@ impl VM {
 
         match expr {
             Expr::Ident(ident) => self.get_var(ident),
-            Expr::Lit(lit) => Ok(Val::from(lit.clone())),
+            Expr::Lit(lit) => {
+                // Arrays need to be reduced to contain only literals
+                match lit {
+                    Literal::Array(arr) => {
+                        let mut new_exprs: Vec<Expr> = vec![];
+                        let current_exprs = arr.get_values();
+
+                        for i in 0..current_exprs.len() {
+                            let expr_to_eval = current_exprs[i].clone();
+                            let eval = self.eval_expr(&expr_to_eval)?;
+                            let expr = Expr::Lit(eval.get_literal()?);
+                            new_exprs.push(expr);
+                        }
+
+                        let new_arr = Array::new(new_exprs);
+                        Ok(Val::from(new_arr))
+                    }
+                    _ => Ok(Val::from(lit.clone())),
+                }
+            }
             Expr::BinOp(op, left, right) => {
                 let left_val = self.eval_expr(left)?;
 
-                // Add boolean short-circuiting
                 match op {
+                    // Add boolean short-circuiting
                     BinOp::And => {
                         if !left_val.get_bool().unwrap() {
                             // Will not crash since Type will have been checked
@@ -557,6 +592,42 @@ impl VM {
                 }
 
                 let right_val = self.eval_expr(right)?;
+
+                match op {
+                    // Add special case for array access (needs to have access to the identifiers)
+                    BinOp::Get => {
+                        let (left_lit, right_lit) =
+                            (left_val.get_literal()?, right_val.get_literal()?);
+
+                        match (left_lit, right_lit) {
+                            (Literal::Array(arr), Literal::Int(i)) => {
+                                let arr_size = arr.get_size();
+
+                                if i < 0 {
+                                    return Err(EvalError::index_out_of_bounds(i, arr_size));
+                                }
+
+                                let idx = i as usize;
+
+                                if idx > arr_size {
+                                    return Err(EvalError::index_out_of_bounds(i, arr_size));
+                                }
+
+                                let arr_expr = arr.get_value(idx);
+                                return self.eval_expr(&arr_expr);
+                            }
+                            _ => {
+                                return Err(EvalError::binary_operation_error(
+                                    BinOp::Get,
+                                    left_val,
+                                    right_val,
+                                ));
+                            }
+                        }
+                    }
+                    _ => (),
+                }
+
                 op.eval(left_val, right_val)
             }
             Expr::UnOp(op, operand) => {
@@ -600,7 +671,7 @@ impl VM {
                 }
             }
             Expr::Block(block) => self.eval_block(block),
-            _ => unimplemented!("VM eval not implemented for expression {:?}", expr),
+            // _ => unimplemented!("VM eval not implemented for expression {:?}", expr),
         }
     }
 
@@ -620,37 +691,68 @@ impl VM {
                     val = Val::mutable_val(val);
                 }
 
-                Ok(Val::from(self.define_var(name, val)?)) // Returns a unit value
+                Ok(Val::from(self.define_var(name, val)?)) // Let statement returns Unit
             }
-            Statement::Assign(lexpr, rexpr) => {
+            Statement::Assign(left, right) => {
                 // Look at the left expression and assign the value of the right expression to it
                 // Is only possible if the left expression is an identifier, or if it is an array access
-                match lexpr {
-                    Expr::Ident(ident) => {
-                        let val = self.eval_expr(rexpr)?;
 
-                        // Type checker will be in charge of verifying the types and the mutability of the variable
-                        Ok(Val::from(self.set_var(ident, val)?)) // Returns the assigned value (for blocks)
+                let (l_expr, r_expr) = (left.clone(), right.clone());
+
+                let var_ident = match left.extract_var_identifier() {
+                    Some(ident) => ident,
+                    None => return Err(EvalError::assignment_error(l_expr)),
+                };
+
+                let val_to_assign = self.eval_expr(right)?;
+
+                let get_indexes_sequence = l_expr.extract_get_sequence();
+
+                if get_indexes_sequence.is_empty() {
+                    // We are in the case of a single literal
+                    self.set_var(&var_ident, val_to_assign)?;
+                    Ok(Literal::Unit.into()) // Assign statement returns Unit
+                } else {
+                    // We are in the case of an array access
+                    // We need to get the array and the indexes to access
+
+                    let mut idx_seq: Vec<usize> = Vec::new();
+                    for idx_expr in get_indexes_sequence {
+                        let idx_val = self.eval_expr(&idx_expr)?;
+                        idx_seq.push(idx_val.get_int()? as usize);
                     }
 
-                    Expr::BinOp(BinOp::Get, left, right) => {
-                        let left_expr = *(left.clone());
-                        // Left val should be an array identifier
-                        match left_expr {
-                            Expr::Ident(ident) => {
-                                let index = self.eval_expr(right)?.get_int()? as usize;
-
-                                let val = self.eval_expr(rexpr)?;
-
-                                // Type checker will be in charge of verifying the types and the mutability of the variable
-                                // Returns a unit value (an array assignment do not return the assigned value in rust)
-                                Ok(Val::from(self.modify_array_value(&ident, index, val)?))
-                            }
-                            _ => Err(EvalError::expected_identifier(lexpr.clone())),
-                        }
-                    }
-                    _ => Err(EvalError::assignment_error(lexpr.clone())),
+                    self.set_array_value(&var_ident, idx_seq, val_to_assign)?;
+                    Ok(Literal::Unit.into()) // Assign statement returns Unit
                 }
+
+                //TODO: Remove if unnecessary
+                // match lexpr {
+                //     Expr::Ident(ident) => {
+                //         let val = self.eval_expr(rexpr)?;
+
+                //         // Type checker will be in charge of verifying the types and the mutability of the variable
+                //         Ok(Val::from(self.set_var(ident, val)?)) // Returns the assigned value (for blocks)
+                //     }
+
+                //     // Expr::BinOp(BinOp::Get, left, right) => {
+                //     //     let left_expr = *(left.clone());
+                //     //     // Left val should be an array identifier
+                //     //     match left_expr {
+                //     //         Expr::Ident(ident) => {
+                //     //             let index = self.eval_expr(right)?.get_int()? as usize;
+
+                //     //             let val = self.eval_expr(rexpr)?;
+
+                //     //             // Type checker will be in charge of verifying the types and the mutability of the variable
+                //     //             // Returns a unit value (an array assignment do not return the assigned value in rust)
+                //     //             Ok(Val::from(self.modify_array_value(&ident, index, val)?))
+                //     //         }
+                //     //         _ => Err(EvalError::expected_identifier(lexpr.clone())),
+                //     //     }
+                //     // }
+                //     _ => Err(EvalError::assignment_error(lexpr.clone())),
+                // }
             }
             Statement::While(cond, block) => {
                 while self.eval_expr(cond).unwrap().get_bool().unwrap() {
@@ -658,12 +760,11 @@ impl VM {
                 }
                 Ok(Literal::Unit.into()) // Returns a unit value
             }
-            Statement::Expr(expr) => self.eval_expr(expr), // Only statement that can return a value
+            Statement::Expr(expr) => self.eval_expr(expr), // This is the only statement that can return a value
             Statement::Fn(fn_decl) => {
                 self.define_func(&fn_decl)?;
                 Ok(Literal::Unit.into()) // Returns a unit value
-            }
-            _ => unimplemented!("VM eval not implemented for statement {:?}", stmt),
+            } // _ => unimplemented!("VM eval not implemented for statement {:?}", stmt),
         }
     }
 
