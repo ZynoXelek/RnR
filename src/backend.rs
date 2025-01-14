@@ -1,6 +1,6 @@
 use core::fmt;
 use std::cmp::min;
-use std::collections::HashMap;
+use std::collections::{HashMap, VecDeque};
 
 use crate::ast::{
     Arguments, BinOp, Block, Expr, FnDeclaration, Literal, Mutable, Parameter, Parameters, Prog,
@@ -76,12 +76,14 @@ const DEBUG_PRINTS: bool = false;
 
 #[derive(Clone, Debug)]
 pub enum VarSize {
-    Single { // Single value
-        bytes_size :usize 
+    Single {
+        // Single value
+        bytes_size: usize,
     },
-    Array {  // Array of size nb_elements of objects of size VarSize
-        nb_elem :usize,
-        elem_size: Box<VarSize>
+    Array {
+        // Array of size nb_elements of objects of size VarSize
+        nb_elem: usize,
+        elem_size: Box<VarSize>,
     },
 }
 
@@ -97,7 +99,10 @@ impl VarSize {
 
     // Size should be given in number of elements ([1, 2] -> size = 2, not 8)
     pub fn new_array(nb_elem: usize, elem_size: VarSize) -> Self {
-        VarSize::Array { nb_elem, elem_size: Box::new(elem_size) }
+        VarSize::Array {
+            nb_elem,
+            elem_size: Box::new(elem_size),
+        }
     }
 
     pub fn get_bytes_size(&self) -> usize {
@@ -121,8 +126,8 @@ impl From<Type> for VarSize {
 
 #[derive(Clone, Debug)]
 pub struct Var {
-    offset: i32,     // Offset relative to the frame pointer (-4, -8, ... or even 16, 12, ...)
-    size: VarSize,   // Size of the variable
+    offset: i32,   // Offset relative to the frame pointer (-4, -8, ... or even 16, 12, ...)
+    size: VarSize, // Size of the variable
 }
 
 impl Var {
@@ -135,13 +140,24 @@ impl Var {
     }
 }
 
+impl fmt::Display for Var {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(
+            f,
+            "offset = {}, size = {}",
+            self.offset,
+            self.size.get_bytes_size()
+        )
+    }
+}
+
 #[derive(Clone, Debug)]
 pub struct Scope {
     functions: HashMap<String, u32>, // Tracks the position of the functions in the instructions memory
 
-    size: u32,                       // Tracks the size of the scope on fp values (It only tracks the negative part of the stack)
-    vars: HashMap<String, Var>,      // Tracks the position of the variables on the stack (relative to fp): name -> var struct
-    temps: Vec<Var>,                 // Tracks the temporary values on the stack //TODO: Implement this
+    size: u32, // Tracks the size of the scope on fp values (It only tracks the negative part of the stack)
+    vars: HashMap<String, Var>, // Tracks the position of the variables on the stack (relative to fp): name -> var struct
+    temps: VecDeque<Var>,       // Tracks the temporary values on the stack //TODO: Implement this
 }
 
 impl Scope {
@@ -153,15 +169,22 @@ impl Scope {
 
             size: 0, // Default size of the scope due to the frame layout
             vars: HashMap::new(),
-            temps: vec![],
+            temps: VecDeque::new(),
         }
     }
 
     // Used to define variables, not functions arguments
-    pub fn add_var(&mut self, name: String, size: &VarSize) {
+    pub fn define_var(&mut self, name: String) {
+        // When we define a variable, it means it is already on the stack, as a temporary for now
         // The offset of the variable is given by the size of the scope, and the size of the var itself
-        let offset = -(self.size as i32 - (size.get_bytes_size() - 4) as i32); // To get back to the first element of the variable
-        let new_var = Var::new(offset, size.clone());
+
+        let new_var = match self.temps.pop_front() {
+            Some(v) => v,
+            None => {
+                unreachable!("Error: Trying to define a variable in a scope where there are no temporary variables to define as a var");
+            }
+        };
+
         self.vars.insert(name, new_var);
     }
 
@@ -169,20 +192,22 @@ impl Scope {
         self.vars.get(name)
     }
 
-    pub fn update_size(&mut self, var_size: &VarSize) {
-        self.size += var_size.get_bytes_size() as u32;
-    }
-
     pub fn update_on_push(&mut self, var_size: VarSize) {
-        let offset = -(self.size as i32 - (var_size.get_bytes_size() - 4) as i32);
+        // Scope has not already been updated in size, so self.size begins at 0
+        let offset = -4 - (self.size as i32 - (var_size.get_bytes_size() - 4) as i32);
         let var = Var::new(offset, var_size);
         self.size += var.get_bytes_size() as u32;
-        self.temps.push(var);
+        self.temps.push_back(var);
     }
 
     pub fn update_on_pop(&mut self) {
-        let var = self.temps.pop().unwrap();
-        self.size -= var.get_bytes_size() as u32;
+        let var_size = match self.temps.pop_back() {
+            Some(v) => v.get_bytes_size() as u32,
+            None => {
+                unreachable!("Error: Trying to pop a variable from a stack where there are no temporary values");
+            }
+        };
+        self.size -= var_size;
     }
 
     pub fn add_function(&mut self, name: String, offset: u32) {
@@ -196,13 +221,15 @@ impl Scope {
 
 impl fmt::Display for Scope {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(
-            f,
-            "Scope: size={}\n| Vars:\n",
-            self.size
-        )?;
+        write!(f, "Scope: size={}\n| Vars:\n", self.size)?;
         for (name, var) in self.vars.iter() {
-            write!(f, "|\t- {}: {}\n", name, var.offset)?;
+            write!(f, "|\t- {}: {}\n", name, var)?;
+        }
+        write!(f, "| Temps:\n")?;
+        let mut i = 0;
+        for var in self.temps.iter() {
+            write!(f, "|\t- {}: {}\n", i, var)?;
+            i += 1;
         }
         write!(f, "| Functions:\n")?;
         for (name, offset) in self.functions.iter() {
@@ -239,7 +266,7 @@ impl GetInstructions for Expr {
 
         // Add an Halt instruction at the end
         expr_instrs.push(halt().comment("End of the expression"));
-        
+
         Ok(expr_instrs)
     }
 }
@@ -335,7 +362,7 @@ pub struct BVM {
 
 impl BVM {
     // TODO: Accept intrinsics but ignore these lines
-    
+
     pub fn new() -> Self {
         let mut bvm = Self {
             var_env: vec![],
@@ -474,8 +501,8 @@ impl BVM {
         instrs
     }
 
-    fn define_var(&mut self, name: &String, size: &VarSize) {
-        self.var_env.last_mut().unwrap().add_var(name.clone(), size);
+    fn define_var(&mut self, name: &String) {
+        self.var_env.last_mut().unwrap().define_var(name.clone());
     }
 
     //* stack frame layout:
@@ -910,7 +937,6 @@ impl BVM {
     // -4[fp]    local 1
     // -8[fp]    local 2, etc.
     fn get_call_len(&self, name: String, args: Arguments) -> u32 {
-
         // Ignore intrinsics such as println!
         if name.ends_with(&"!") {
             return 0;
@@ -919,8 +945,6 @@ impl BVM {
         let mut call_len = self.get_add_scope_len(); // Add the new scope
         for arg in args.0.iter() {
             call_len += self.get_expr_len(arg.clone());
-            // // call_len += self.get_pop_len();
-            // // call_len += 1;
         }
         call_len += 1; // bal
         call_len += self.get_remove_scope_len(); // Remove the new scope
@@ -944,10 +968,6 @@ impl BVM {
         let mut func_instrs = Instrs::new();
 
         let nb_args = args.0.len();
-        // // if nb_args > 3 {
-        // //     // We only support 3 arguments for now
-        // //     panic!("Only 3 arguments are supported for now");
-        // // }
 
         // prelude
         func_instrs.append(&mut self.add_scope()); // Add the new scope to define the function arguments
@@ -956,19 +976,6 @@ impl BVM {
 
             let arg_expr = args.0.get(i).unwrap().clone();
             func_instrs.append(&mut self.process_expr(arg_expr)); // The value is now located on top of the stack (No need to be moved)
-            // // let arg_offset = 16 - i as i32 * 4;
-            // // func_instrs.append(&mut self.pop(t0)); // Pop the value to t0
-            // // self.pc += 1;
-            // // func_instrs.push(
-            // //     sw(t0, arg_offset as i16, fp).comment(
-            // //         // Store argument value from register t0 to the correct argument position in the stack
-            // //         format!(
-            // //             "FUNC_CALL '{}': Set the value of argument {} in the stack at relative position {} to value of t0",
-            // //             name, i, arg_offset
-            // //         )
-            // //         .as_str(),
-            // //     ),
-            // // );
         }
 
         // Function call
@@ -1029,7 +1036,6 @@ impl BVM {
         // Finally, we generate the correct variables for the function call
         let last_scope = function_scopes.last_mut().unwrap();
 
-        // // let nb_params = min(fd.parameters.0.len(), 3); // We only support 3 arguments for now
         let nb_params = fd.parameters.0.len();
         let mut param_offset = -4;
 
@@ -1041,10 +1047,7 @@ impl BVM {
 
             let param_total_size = param_size.get_bytes_size() as i32;
 
-            // // let param_var = Var::new(16 - i as i32 * 4, VarSize::default()); 
-            // // last_scope.vars.insert(param_id, param_var); // Each parameter is 4 bytes and starts at +16 and goes to +8
-
-            last_scope.update_size(&param_size);
+            last_scope.size += param_total_size as u32;
             let param_var = Var::new(param_offset, param_size);
             last_scope.vars.insert(param_id, param_var);
 
@@ -1072,6 +1075,7 @@ impl BVM {
     fn process_func_def(&mut self, fd: FnDeclaration) -> Instrs {
         // A function shall take the values of its arguments as local variables from the previous scope    | BEFORE: from the frame layout at offsets 16, 12, and 8.
         // This manages the function body.
+
         let mut func_instrs = Instrs::new();
         let func_name = fd.id.clone();
 
@@ -1090,7 +1094,7 @@ impl BVM {
         // We need to pop it to t0
         // To show the caller that there is a return value, we will store in t1 whether the function returns a value or not
         // It will be 1 if there is one, and 0 if there is none (boolean "does the function return a value?")
-        if fd.ty.is_some() {
+        if fd.ty.is_some() && fd.ty.clone().unwrap() != Type::Unit {
             func_instrs.append(&mut self.pop(t0));
             self.pc += 1;
             func_instrs.push(
@@ -1139,7 +1143,7 @@ impl BVM {
                     //         let lit_expr = Expr::Lit(c);
                     //         expr_len += self.get_expr_len(lit_expr);
                     //     }
-                        
+
                     //     // The size of the array
                     //     expr_len += 1; // Just an addi instruction
                     //     expr_len += self.get_push_len();
@@ -1252,15 +1256,9 @@ impl BVM {
             Expr::BinOp(op, left, right) => {
                 expr_instrs.append(&mut self.process_binop(op, *left, *right))
             }
-            Expr::UnOp(op, expr) => {
-                expr_instrs.append(&mut self.process_unop(op, *expr))
-            },
-            Expr::Par(expr) => {
-                expr_instrs.append(&mut self.process_expr(*expr))
-            },
-            Expr::Call(name, args) => {
-                expr_instrs.append(&mut self.process_func_call(name, args))
-            },
+            Expr::UnOp(op, expr) => expr_instrs.append(&mut self.process_unop(op, *expr)),
+            Expr::Par(expr) => expr_instrs.append(&mut self.process_expr(*expr)),
+            Expr::Call(name, args) => expr_instrs.append(&mut self.process_func_call(name, args)),
             Expr::IfThenElse(cond, then_block, else_block) => {
                 // Process the condition
                 expr_instrs.append(&mut self.process_expr(*cond)); // It is located in t0, AND at the top of the stack
@@ -1280,17 +1278,24 @@ impl BVM {
 
                 let scope_size_before_then = self.var_env.last().unwrap().size;
 
+                // We must save our current scopes in case there is an else block
+                let backup_var_env = self.var_env.clone();
+
                 // Now we can put the then block
                 let mut then_instrs = self.process_block(then_block);
                 expr_instrs.append(&mut then_instrs);
 
                 if let Some(else_block) = else_block {
+                    // We need to restore the scopes before the then block since the two of them
+                    // should have the same effect (type checked) and they can never happen at the same time
+                    self.var_env = backup_var_env;
+
                     let nb_else_instrs = self.get_block_len(else_block.clone()) as i16;
 
                     // If there is an else block, we should jump after the then block
                     self.pc += 1;
                     expr_instrs.push(b(nb_else_instrs).comment("IfThenElse jump after then block"));
-                    
+
                     // Now we can put the else block
                     // We should restore the scope size before the then block to process the else block (to avoid thinking there are two pushed values)
                     self.var_env.last_mut().unwrap().size = scope_size_before_then;
@@ -1351,13 +1356,10 @@ impl BVM {
             Statement::Let(_, name, ty, expr_opt) => {
                 // The type of the variable will have been set by the type checker.
                 // If it is not, we cannot get the size of the variable, so we panic.
-                let size: VarSize = VarSize::default(); //TODO: Update this
-
-                // if let Some(ty) = ty {
-                //     size = VarSize::from(ty);
-                // } else {
-                //     panic!("Variable '{}' has no type", name);
-                // }
+                let size = match ty {
+                    Some(ty) => VarSize::from(ty),
+                    None => unreachable!("Variable '{}' has no type", name), // unreachable since type checker adds missing type annotations
+                };
 
                 if let Some(expr) = expr_opt {
                     stmt_instrs.append(&mut self.process_expr(expr)); // The value is now located on top of the stack
@@ -1371,7 +1373,9 @@ impl BVM {
                 }
 
                 // Now we define the variable in our environment
-                self.define_var(&name, &size);
+                self.define_var(&name);
+
+                // This does not push anything in the end (unit type)
             }
             Statement::Assign(left, right) => {
                 // We first process the expression to get the new value
@@ -1405,6 +1409,8 @@ impl BVM {
                     }
                     _ => todo!(), //TODO: Add support for other assignments such as arrays
                 }
+
+                // This does not push anything in the end (unit type)
             }
             Statement::While(cond, block) => {
                 // While loops are an if statement, where the last instruction jumps back to the condition
@@ -1432,12 +1438,19 @@ impl BVM {
                 while_instrs.push(b(jump_back_nb).comment("While jump back to condition"));
 
                 stmt_instrs.append(&mut while_instrs);
+
+                // This does not push anything in the end (unit type)
             }
             Statement::Expr(expr) => {
                 // An expression should not remain on the stack
-                stmt_instrs.append(&mut self.process_expr(expr)); // Result is at the top of the stack
-                stmt_instrs.append(&mut self.pop(t0)); // Pop the result
-            },
+                let nb_temp_vars = self.var_env.last().unwrap().temps.len();
+                stmt_instrs.append(&mut self.process_expr(expr)); // Result is at the top of the stack (if not unit type)
+
+                if self.var_env.last().unwrap().temps.len() > nb_temp_vars {
+                    // The expression returned a value
+                    stmt_instrs.append(&mut self.pop(t0)); // Pop the result then
+                }
+            }
             Statement::Fn(fn_decl) => {} // Functions definitions are processed when entering a block
         }
 
@@ -1550,7 +1563,8 @@ impl BVM {
     fn get_prog_len(&self, prog: Prog) -> u32 {
         let mut prog_len = 0;
 
-        for fd in prog.0.iter() { // The order does not matter here
+        for fd in prog.0.iter() {
+            // The order does not matter here
             prog_len += self.get_func_def_len(fd.clone());
         }
 

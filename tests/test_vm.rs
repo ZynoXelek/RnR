@@ -76,6 +76,20 @@ mod test_vm {
     }
 
     #[test]
+    fn test_string_add() {
+        let v = parse_test::<Block, Val>(
+            "
+            {
+                let a = \"Hello, \" + \"world!\";
+                a
+            }
+            ",
+        );
+
+        assert_eq!(v.unwrap().get_string().unwrap(), "Hello, world!");
+    }
+
+    #[test]
     fn test_block_let() {
         let v = parse_test::<Block, Val>(
             "
