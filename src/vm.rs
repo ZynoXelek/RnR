@@ -256,7 +256,39 @@ impl BinOp {
                 (Literal::String(l), Literal::String(r)) => Ok(Val::from(l <= r)),
                 _ => Err(EvalError::binary_operation_error(*self, left, right)),
             },
-            _ => unimplemented!("BinOp::eval for {:?}", self),
+            // Array operation, for cases where we don't need identifiers
+            BinOp::Get => {
+                match (left_lit.clone(), right_lit.clone()) {
+                    (Literal::Array(arr), Literal::Int(i)) => {
+                        let arr_size = arr.get_size();
+
+                        if i < 0 {
+                            return Err(EvalError::index_out_of_bounds(i, arr_size));
+                        }
+
+                        let idx = i as usize;
+
+                        if idx > arr_size {
+                            return Err(EvalError::index_out_of_bounds(i, arr_size));
+                        }
+
+                        let arr_expr = arr.get_value(idx);
+                        if arr_expr.contains_identifier() {
+                            unimplemented!("BinOp::eval for {:?} with left {} and right {} leads to an expression with identifiers: {}", self, left_lit, right_lit, arr_expr);
+                        }
+
+                        match arr_expr {
+                        Expr::Lit(lit) => return Ok(Val::from(lit)),
+                        _ => panic!("Can't get value from array with expressions containing identifiers"),
+                    }
+                    }
+                    _ => Err(EvalError::binary_operation_error(
+                        *self,
+                        left_clone,
+                        right_clone,
+                    )),
+                }
+            } // _ => unimplemented!("BinOp::eval for {:?}", self),
         }
     }
 }

@@ -1,6 +1,6 @@
 use rnr::ast::{Block, Expr, Prog};
-use rnr::test_util::assert_optimize;
 use rnr::common::parse;
+use rnr::test_util::assert_optimize;
 
 #[cfg(test)]
 pub mod test_optimize {
@@ -482,7 +482,6 @@ pub mod test_optimize {
         }
 
         #[test]
-        #[ignore = "Not implemented yet (can't parse expr in arrays)"]
         fn test_array_get_with_expr_3() {
             let expr: Expr = parse("[1, 2 * 5 + 7, 3][1]");
             let expected: Expr = parse("17");
@@ -490,7 +489,7 @@ pub mod test_optimize {
         }
 
         #[test]
-        #[ignore = "Not implemented yet (can't parse expr in arrays)"]
+        #[ignore = "Not intended to be that aggressive for now"]
         fn test_array_get_with_expr_4() {
             let block: Block = parse(
                 "
@@ -524,6 +523,14 @@ pub mod test_optimize {
         fn test_array_of_arrays_get_2() {
             let expr: Expr = parse("[[1, 2], [3, 4]][1][0]");
             let expected: Expr = parse("3");
+            assert_optimize(&expr, expected);
+        }
+
+        #[test]
+        fn test_array_of_arrays_get_3() {
+            let expr: Expr =
+                parse("[[[true, false], [false, true]], [[false, true], [true, false]]][1][0][1]");
+            let expected: Expr = parse("true");
             assert_optimize(&expr, expected);
         }
 
@@ -919,7 +926,7 @@ pub mod test_optimize {
                     };
                     a + b
                 }
-                "
+                ",
             );
             let expected: Block = parse(
                 "
@@ -959,7 +966,7 @@ pub mod test_optimize {
 
                     a + b
                 }
-                "
+                ",
             );
             let expected: Block = parse(
                 "
@@ -988,7 +995,7 @@ pub mod test_optimize {
                     }
                     a
                 }
-                "
+                ",
             );
             let expected: Block = parse(
                 "
@@ -1017,7 +1024,7 @@ pub mod test_optimize {
                     }
                     a
                 }
-                "
+                ",
             );
             let expected: Block = block.clone();
             assert_optimize(&block, expected);
@@ -1043,7 +1050,7 @@ pub mod test_optimize {
                     let a = dummy(3);
                     a
                 }
-                "
+                ",
             );
             let expected: Block = parse(
                 "
@@ -1076,7 +1083,7 @@ pub mod test_optimize {
                     b = a + 4;
                     b
                 }
-                "
+                ",
             );
             let expected: Block = parse(
                 "
@@ -1103,7 +1110,7 @@ pub mod test_optimize {
                     let b = a + 4;
                     b
                 }
-                "
+                ",
             );
             let expected: Block = parse(
                 "
@@ -1130,7 +1137,7 @@ pub mod test_optimize {
                     let a = 4;
                     a + b
                 }
-                "
+                ",
             );
             let expected: Block = parse(
                 "
@@ -1157,7 +1164,7 @@ pub mod test_optimize {
                     let a = 3; // Should be optimized out because it is never used
                     b
                 }
-                "
+                ",
             );
             let expected: Block = parse(
                 "
@@ -1230,7 +1237,7 @@ pub mod test_optimize {
                     };
                     a + c
                 }
-                "
+                ",
             );
             let expected: Block = parse(
                 "
@@ -1272,7 +1279,7 @@ pub mod test_optimize {
                     d = a + c;
                     a + c * d
                 }
-                "
+                ",
             );
             let expected: Block = parse(
                 "
@@ -1323,7 +1330,7 @@ pub mod test_optimize {
                         a * d
                     }
                 }
-                "
+                ",
             );
             let expected: Block = parse(
                 "
@@ -1367,7 +1374,7 @@ pub mod test_optimize {
 
                     d / b
                 }
-                "
+                ",
             );
             let expected: Block = parse(
                 "
@@ -1404,7 +1411,7 @@ pub mod test_optimize {
                     }
                     a
                 }
-                "
+                ",
             );
             let expected: Block = parse(
                 "
@@ -1448,7 +1455,7 @@ pub mod test_optimize {
                     }
                     a
                 }
-                "
+                ",
             );
             let expected: Block = parse(
                 "
@@ -1484,7 +1491,7 @@ pub mod test_optimize {
                     }
                     a
                 }
-                "
+                ",
             );
             let expected: Block = parse(
                 "
@@ -1521,7 +1528,7 @@ pub mod test_optimize {
                     }
                     a
                 }
-                "
+                ",
             );
             let expected: Block = parse(
                 "
@@ -1535,6 +1542,93 @@ pub mod test_optimize {
                         a = a + g(); // a + 1
                     }
                     a
+                }
+                ",
+            );
+            assert_optimize(&block, expected);
+        }
+
+        #[test]
+        fn test_useless_var_def_with_arrays_1() {
+            let block: Block = parse(
+                "
+                {
+                    let a = [1, 2, 3]; // Useless var, should be removed
+                    1
+                }
+                ",
+            );
+            let expected: Block = parse(
+                "
+                {
+                    1
+                }
+                ",
+            );
+            assert_optimize(&block, expected);
+        }
+
+        #[test]
+        fn test_useless_var_def_with_arrays_2() {
+            let block: Block = parse(
+                "
+                {
+                    let mut a = [1, 2, 3]; // Useless var, should be removed
+                    a[2] = 1; // Should be removed
+                    a[1] = 0; // Should be removed
+                    1
+                }
+                ",
+            );
+            let expected: Block = parse(
+                "
+                {
+                    1
+                }
+                ",
+            );
+            assert_optimize(&block, expected);
+        }
+
+        #[test]
+        fn test_useless_var_def_with_arrays_3() {
+            let block: Block = parse(
+                "
+                {
+                    let mut a = [[1, 2], [3, 4]]; // Useless var, should be removed
+                    a[0][0] = -5; // Should be removed
+                    a[1] = [0, 1]; // Should be removed
+                    1
+                }
+                ",
+            );
+            let expected: Block = parse(
+                "
+                {
+                    1
+                }
+                ",
+            );
+            assert_optimize(&block, expected);
+        }
+
+        #[test]
+        fn test_useless_var_def_with_arrays_4() {
+            let block: Block = parse(
+                "
+                {
+                    let mut a = [[[1, 2], [3, 4]], [[5, 6], [7, 8]]]; // Useless var, should be removed
+                    a[0][0][1] = -5; // Should be removed
+                    a[0][1] = [0, 1]; // Should be removed
+                    a[1] = [[0, 1], [2, 3]]; // Should be removed
+                    1
+                }
+                "
+            );
+            let expected: Block = parse(
+                "
+                {
+                    1
                 }
                 ",
             );
@@ -1557,7 +1651,7 @@ pub mod test_optimize {
                     let a = 1;
                     a
                 }
-                "
+                ",
             );
             let expected: Block = parse(
                 "
@@ -1596,7 +1690,7 @@ pub mod test_optimize {
                     let a = 1;
                     a
                 }
-                "
+                ",
             );
             let expected: Block = parse(
                 "
@@ -1627,7 +1721,7 @@ pub mod test_optimize {
                     let a = fact(5);
                     a
                 }
-                "
+                ",
             );
             let expected: Block = block.clone();
             assert_optimize(&block, expected);
@@ -1659,7 +1753,7 @@ pub mod test_optimize {
                     let a = is_even(5);
                     a
                 }
-                "
+                ",
             );
             let expected: Block = block.clone();
             assert_optimize(&block, expected);

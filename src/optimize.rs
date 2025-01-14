@@ -2,9 +2,10 @@ use core::fmt;
 use std::collections::HashMap;
 
 use crate::ast::{
-    Arguments, BinOp, Block, Expr, FnDeclaration, Literal, Parameters, Prog, Statement, Type, UnOp,
+    Arguments, Array, BinOp, Block, Expr, FnDeclaration, Literal, Parameters, Prog, Statement,
+    Type, UnOp,
 };
-use crate::common::{Optimize, Eval};
+use crate::common::{Eval, Optimize};
 use crate::error::{Error, EvalError}; //TODO: use custom error
 use crate::intrinsics::*;
 use crate::vm::Val;
@@ -43,14 +44,14 @@ impl Sid {
 }
 
 #[derive(Clone, Debug, PartialEq)]
-pub struct ScopeFn {
+struct ScopeFn {
     uses: Uses,
     fn_decl: FnDeclaration,
     call_usage: SimpleExprUsage,
 }
 
 impl ScopeFn {
-    pub fn new(uses: Uses, fn_decl: FnDeclaration, call_usage: SimpleExprUsage) -> Self {
+    fn new(uses: Uses, fn_decl: FnDeclaration, call_usage: SimpleExprUsage) -> Self {
         Self {
             uses,
             fn_decl,
@@ -58,27 +59,27 @@ impl ScopeFn {
         }
     }
 
-    pub fn get_uses(&self) -> Uses {
+    fn get_uses(&self) -> Uses {
         self.uses
     }
 
-    pub fn get_fn_decl(&self) -> FnDeclaration {
+    fn get_fn_decl(&self) -> FnDeclaration {
         self.fn_decl.clone()
     }
 
-    pub fn get_call_usage(&self) -> SimpleExprUsage {
+    fn get_call_usage(&self) -> SimpleExprUsage {
         self.call_usage.clone()
     }
 
-    pub fn use_fn(&mut self) {
+    fn use_fn(&mut self) {
         self.uses += 1;
     }
 
-    pub fn use_fn_multiple(&mut self, uses: Uses) {
+    fn use_fn_multiple(&mut self, uses: Uses) {
         self.uses += uses;
     }
 
-    pub fn revert_uses(&mut self, uses: Uses) {
+    fn revert_uses(&mut self, uses: Uses) {
         if self.uses > uses {
             self.uses -= uses;
         } else {
@@ -103,7 +104,7 @@ impl Scope {
 
     //* Variables
 
-    pub fn define_var(&mut self, var: String) {
+    fn define_var(&mut self, var: String) {
         if let Some(uses) = self.vars.get_mut(&var) {
             *uses = 0; // We redefine the variable, it has therefore not be used yet.
         } else {
@@ -111,11 +112,11 @@ impl Scope {
         }
     }
 
-    pub fn remove_var(&mut self, var: String) {
+    fn remove_var(&mut self, var: String) {
         self.vars.remove(&var);
     }
 
-    pub fn use_var(&mut self, var: String) {
+    fn use_var(&mut self, var: String) {
         if let Some(uses) = self.vars.get_mut(&var) {
             *uses += 1;
         } else {
@@ -131,7 +132,7 @@ impl Scope {
         }
     }
 
-    pub fn use_var_multiple(&mut self, var: String, uses: Uses) {
+    fn use_var_multiple(&mut self, var: String, uses: Uses) {
         if let Some(uses_var) = self.vars.get_mut(&var) {
             *uses_var += uses;
         } else {
@@ -139,7 +140,7 @@ impl Scope {
         }
     }
 
-    pub fn revert_var_uses(&mut self, var: String, uses: Uses) {
+    fn revert_var_uses(&mut self, var: String, uses: Uses) {
         if let Some(uses_var) = self.vars.get_mut(&var) {
             if *uses_var > uses {
                 *uses_var -= uses; // It is still more than 1
@@ -155,7 +156,7 @@ impl Scope {
 
     //* Functions
 
-    pub fn define_func(&mut self, fn_decl: FnDeclaration, call_usage: SimpleExprUsage) {
+    fn define_func(&mut self, fn_decl: FnDeclaration, call_usage: SimpleExprUsage) {
         let fn_name = fn_decl.id.clone();
         if let Some(uses) = self.functions.get_mut(&fn_name) {
             unreachable!("Function {} is already defined", fn_name); // Unreachable since the type checker will have already checked it.
@@ -165,7 +166,7 @@ impl Scope {
         }
     }
 
-    pub fn modify_func(&mut self, new_fn_decl: FnDeclaration, new_call_usage: SimpleExprUsage) {
+    fn modify_func(&mut self, new_fn_decl: FnDeclaration, new_call_usage: SimpleExprUsage) {
         let fn_name = new_fn_decl.id.clone();
         if let Some(scope_fn) = self.functions.get_mut(&fn_name) {
             scope_fn.fn_decl = new_fn_decl;
@@ -175,11 +176,11 @@ impl Scope {
         }
     }
 
-    pub fn remove_func(&mut self, fn_name: String) {
+    fn remove_func(&mut self, fn_name: String) {
         self.functions.remove(&fn_name);
     }
 
-    pub fn use_func(&mut self, fn_name: String) {
+    fn use_func(&mut self, fn_name: String) {
         if let Some(scope_fn) = self.functions.get_mut(&fn_name) {
             scope_fn.use_fn();
         } else {
@@ -203,7 +204,7 @@ impl Scope {
         }
     }
 
-    pub fn use_func_multiple(&mut self, fn_name: String, uses: Uses) {
+    fn use_func_multiple(&mut self, fn_name: String, uses: Uses) {
         if let Some(scope_fn) = self.functions.get_mut(&fn_name) {
             scope_fn.use_fn_multiple(uses);
         } else {
@@ -215,7 +216,7 @@ impl Scope {
         }
     }
 
-    pub fn revert_func_uses(&mut self, fn_name: String, uses: Uses) {
+    fn revert_func_uses(&mut self, fn_name: String, uses: Uses) {
         if let Some(scope_fn) = self.functions.get_mut(&fn_name) {
             scope_fn.revert_uses(uses);
         } else {
@@ -276,7 +277,10 @@ impl fmt::Display for Scope {
 
 //? Helper methods to concatenate hashmaps of uses
 
-fn concatenate_uses(uses1: &HashMap<Sid, Uses>, uses2: &HashMap<Sid, Uses>) -> HashMap<Sid, Uses> {
+pub fn concatenate_uses(
+    uses1: &HashMap<Sid, Uses>,
+    uses2: &HashMap<Sid, Uses>,
+) -> HashMap<Sid, Uses> {
     let mut concatenated_uses = uses1.clone();
 
     for (var, uses) in uses2.iter() {
@@ -290,7 +294,7 @@ fn concatenate_uses(uses1: &HashMap<Sid, Uses>, uses2: &HashMap<Sid, Uses>) -> H
     concatenated_uses
 }
 
-fn subtract_uses(uses1: &HashMap<Sid, Uses>, uses2: &HashMap<Sid, Uses>) -> HashMap<Sid, Uses> {
+pub fn subtract_uses(uses1: &HashMap<Sid, Uses>, uses2: &HashMap<Sid, Uses>) -> HashMap<Sid, Uses> {
     let mut subtracted_uses = uses1.clone();
 
     for (var, uses) in uses2.iter() {
@@ -455,18 +459,21 @@ impl BlockUsage {
     fn as_simple_usage(&self) -> SimpleExprUsage {
         self.return_usage.clone()
     }
-    
+
     fn uses_intrinsics(&self) -> bool {
-        self.stmts_usage.iter().any(|stmt| stmt.detailed.uses_intrinsics())
+        self.stmts_usage
+            .iter()
+            .any(|stmt| stmt.detailed.uses_intrinsics())
     }
 }
 
 #[derive(Clone, Debug, PartialEq)]
 enum DetailedExprUsage {
-    Generic(SimpleExprUsage),                              // Ident, Lit
+    Generic(SimpleExprUsage),      // Ident, Lit (except array)
+    Array(Vec<DetailedExprUsage>), // Array
     BinOp(Box<DetailedExprUsage>, Box<DetailedExprUsage>), // BinOp
-    UnOp(Box<DetailedExprUsage>),                          // UnOp
-    Par(Box<DetailedExprUsage>),                           // Par
+    UnOp(Box<DetailedExprUsage>),  // UnOp
+    Par(Box<DetailedExprUsage>),   // Par
     Call(Sid, Vec<DetailedExprUsage>, SimpleExprUsage), // Call: func sid to identify the function + call usage
     IfThenElse(Box<DetailedExprUsage>, BlockUsage, Option<BlockUsage>), // IfThenElse
     Block(BlockUsage),                                  // Block
@@ -477,6 +484,10 @@ impl DetailedExprUsage {
 
     fn new_generic(g_use: SimpleExprUsage) -> Self {
         Self::Generic(g_use)
+    }
+
+    fn new_array(exprs: Vec<DetailedExprUsage>) -> Self {
+        Self::Array(exprs)
     }
 
     fn new_binop(left: DetailedExprUsage, right: DetailedExprUsage) -> Self {
@@ -512,6 +523,7 @@ impl DetailedExprUsage {
     fn uses_intrinsics(&self) -> bool {
         match self {
             Self::Generic(g_use) => false,
+            Self::Array(exprs) => exprs.iter().any(|expr| expr.uses_intrinsics()),
             Self::BinOp(left, right) => left.uses_intrinsics() || right.uses_intrinsics(),
             Self::UnOp(expr) => expr.uses_intrinsics(),
             Self::Par(expr) => expr.uses_intrinsics(),
@@ -535,6 +547,13 @@ impl DetailedExprUsage {
     fn as_simple_usage(&self) -> SimpleExprUsage {
         match self {
             Self::Generic(g_use) => g_use.clone(),
+            Self::Array(exprs) => {
+                let mut g_use = SimpleExprUsage::new();
+                for expr in exprs {
+                    g_use.concatenate(expr.as_simple_usage());
+                }
+                g_use
+            }
             Self::BinOp(left, right) => {
                 let mut g_use = left.as_simple_usage();
                 g_use.concatenate(right.as_simple_usage());
@@ -561,6 +580,22 @@ impl DetailedExprUsage {
             Self::Block(block) => block.as_simple_usage(),
         }
     }
+
+    fn remove_assign_var_ident_use(&mut self, var_ident: &Sid) {
+        match self {
+            Self::Generic(g_use) => {
+                // We remove the use of the assigned variable
+                //? We may decide either to remove the variable from the left part or keep it with -1 uses
+                // g_use.remove_one_var_use(var_ident);
+                g_use.remove_one_var_use_and_delete(var_ident);
+            }
+            Self::BinOp(left, _) => {
+                // In case of a get array, or at least it should not be used in other cases
+                left.remove_assign_var_ident_use(var_ident);
+            }
+            _ => {} // Do nothing for the other cases
+        }
+    }
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -574,19 +609,13 @@ impl ExprUsage {
 
     fn new(detailed: DetailedExprUsage) -> Self {
         let summary = detailed.as_simple_usage();
-        Self {
-            summary,
-            detailed,
-        }
+        Self { summary, detailed }
     }
 
     fn new_empty() -> Self {
         let summary = SimpleExprUsage::new();
         let detailed = DetailedExprUsage::new_generic(summary.clone());
-        Self {
-            summary,
-            detailed,
-        }
+        Self { summary, detailed }
     }
 
     fn new_simple(g_use: SimpleExprUsage) -> Self {
@@ -595,6 +624,12 @@ impl ExprUsage {
             summary: g_use,
             detailed,
         }
+    }
+
+    fn new_array(exprs: Vec<ExprUsage>) -> Self {
+        let detailed =
+            DetailedExprUsage::new_array(exprs.iter().map(|expr| expr.detailed.clone()).collect());
+        ExprUsage::new(detailed)
     }
 
     fn new_unop(expr: ExprUsage) -> Self {
@@ -880,28 +915,8 @@ impl DetailedStmtUsage {
         // eprintln!("Left part: {:?}", left);
         // eprintln!("Right part: {:?}", right);
 
-        let new_left_detailed = match left.detailed {
-            DetailedExprUsage::Generic(mut g_use) => {
-                g_use.remove_one_var_use_and_delete(&var); // May be changed back to the non removing version -> keep var used but with 0 uses
-                DetailedExprUsage::new_generic(g_use)
-            }
-            DetailedExprUsage::BinOp(left_ident, _right_expr) => {
-                let new_left_ident = match *left_ident {
-                    DetailedExprUsage::Generic(mut g_use) => {
-                        g_use.remove_one_var_use_and_delete(&var); // May be changed back to the non removing version -> keep var used but with 0 uses
-                        Box::new(DetailedExprUsage::new_generic(g_use))
-                    }
-                    _ => unreachable!(
-                        "Left part of an assignation should be a generic expression or a get array"
-                    ),
-                };
-
-                DetailedExprUsage::BinOp(new_left_ident, _right_expr)
-            }
-            _ => unreachable!(
-                "Left part of an assignation should be a generic expression or a get array"
-            ),
-        };
+        let mut new_left_detailed = left.detailed.clone();
+        new_left_detailed.remove_assign_var_ident_use(&var);
 
         // Generate the new Left part
         let new_left = ExprUsage::new(new_left_detailed);
@@ -1516,7 +1531,11 @@ impl Optimizer {
         // For instance, 3 + 4 + 5 + a => 12 + a
         // However, 3 + a + 4 + 5 => 12 + a as well (not supported yet)
 
-        let mut final_expr = Expr::BinOp(binop, Box::new(left_opt.clone()), Box::new(right_opt.clone()));
+        let mut final_expr = Expr::BinOp(
+            binop,
+            Box::new(left_opt.clone()),
+            Box::new(right_opt.clone()),
+        );
 
         // If the operands are literals, we can evaluate the operation, else we just return the binop with the optimized operands.
         if !left_opt.contains_identifier() && !right_opt.contains_identifier() {
@@ -1526,7 +1545,7 @@ impl Optimizer {
             match (val1, val2) {
                 (Ok(val1), Ok(val2)) => {
                     let result = binop.eval(val1, val2);
-        
+
                     // Now we need to convert it as an Expr
                     match result {
                         Ok(val) => {
@@ -1535,7 +1554,7 @@ impl Optimizer {
                         }
                         Err(e) => {}
                     }
-                },
+                }
                 _ => {}
             }
         }
@@ -1554,18 +1573,6 @@ impl Optimizer {
         let opt_expr = OptExpr::new(inner_expr, expr_usage);
 
         Ok(opt_expr)
-
-        //? We may want to keep the outer parenthesis for the inner expression if it is an operation. In this case, uncomment the following lines:
-        // // If the inner part is not an operation, we can remove the parenthesis.
-        // // TODO: Check for priority of operations to remove useless parenthesis
-        // let (inner_opt, inner_use) = inner.as_tuple();
-        // match inner_opt {
-        //     Expr::BinOp(_, _, _) | Expr::UnOp(_, _) => {
-        //         let expr = Expr::Par(Box::new(inner_opt));
-        //         Ok(OptExpr::new(expr, inner_use))
-        //     }, // We keep the parenthesis.
-        //     _ => Ok(inner), // We can remove the parenthesis.
-        // }
     }
 
     fn optimize_call(&mut self, ident: String, args: Arguments) -> Result<OptExpr, Error> {
@@ -1696,7 +1703,28 @@ impl Optimizer {
                 let expr_usage = ExprUsage::new_simple(simple_usage);
                 Ok(OptExpr::new(Expr::Ident(ident), expr_usage))
             }
-            Expr::Lit(lit) => Ok(OptExpr::new(Expr::Lit(lit), ExprUsage::new_empty())),
+            Expr::Lit(lit) => {
+                // If the literal is an array, we should optimize its elements
+                match lit {
+                    Literal::Array(arr) => {
+                        let mut new_expressions = vec![];
+                        let mut new_usages = vec![];
+                        for elem in arr.get_values() {
+                            let (elem_opt, elem_use) = self._optimize_expr(elem)?.as_tuple();
+                            new_expressions.push(elem_opt);
+                            new_usages.push(elem_use);
+                        }
+
+                        let new_array = Array::new(new_expressions);
+
+                        Ok(OptExpr::new(
+                            Expr::Lit(Literal::Array(new_array)),
+                            ExprUsage::new_array(new_usages),
+                        ))
+                    }
+                    _ => Ok(OptExpr::new(Expr::Lit(lit), ExprUsage::new_empty())),
+                }
+            }
             Expr::BinOp(binop, left, right) => self.optimize_binop(binop, *left, *right),
             Expr::UnOp(unop, operand) => self.optimize_unop(unop, *operand),
             Expr::Par(inner) => self.optimize_par(*inner),
@@ -1867,22 +1895,16 @@ impl Optimizer {
                 // We shall as well optimize the left part in case of an array access,
                 // so that the index gets optimized if it can be, and so that we can collect
                 // the index computation usage.
-                let (ident_expr_opt, ident_expr_use) = self._optimize_expr(ident_expr)?.as_tuple();
+                let (ident_expr_opt, ident_expr_use) =
+                    self._optimize_expr(ident_expr.clone())?.as_tuple();
 
-                let var_ident = match ident_expr_opt.clone() {
-                    Expr::Ident(ident) => ident,
-                    Expr::BinOp(BinOp::Get, left, _) => {
-                        // Array case
-                        if let Expr::Ident(ident) = *left {
-                            ident
-                        } else {
-                            unreachable!(
-                                "Trying to assign to a non-ident in array get: {}",
-                                ident_expr_opt
-                            )
-                        }
-                    }
-                    _ => unreachable!("Trying to assign to a non-ident: {}", ident_expr_opt),
+                let var_ident = match ident_expr.extract_var_identifier() {
+                    Some(ident) => ident,
+                    // Unreachable thanks to the type checker
+                    None => unreachable!(
+                        "Assign statement with a non-identifier left part: {:?}",
+                        ident_expr
+                    ),
                 };
 
                 let stmt = Statement::Assign(ident_expr_opt, expr_opt);
@@ -2807,7 +2829,7 @@ impl Optimizer {
 
                         // We replace the statement by an empty one
                         let replacing_stmt = Statement::get_empty_statement();
-                        replacing_used = StmtUsage::new_empty();
+                        // replacing_used = StmtUsage::new_empty(); // Never read
                         replacing_opt_stmt = OptStmt::new_empty();
                     }
                 }
