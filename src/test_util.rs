@@ -1,8 +1,8 @@
-use std::fmt::{Debug, Display};
 use crate::ast::{Block, Literal, Type};
-use crate::common::{Eval, Optimize};
+use crate::common::{CheckType, Eval, Optimize};
 use crate::parse::{parse, try_parse};
 use crate::vm::Val;
+use std::fmt::{Debug, Display};
 use syn::parse::Parse;
 
 /// Takes a regular rust expression, turns it into a string, and then parses
@@ -34,7 +34,8 @@ pub fn assert_parse_fail<T: Parse + std::fmt::Debug>(src: &str) {
 
 /// Assert that type checking fails.
 pub fn assert_type_fail<T>(p: &T)
-where T: Eval<Type>
+where
+    T: Eval<Type>,
 {
     let typ = p.eval();
     assert!(typ.is_err());
@@ -71,6 +72,22 @@ where
     assert!(ty.is_ok());
     let ty = ty.unwrap();
     assert_eq!(ty, expected.into());
+}
+
+// Assert that the program type checked result is the expected program.
+pub fn assert_type_check<T1>(p: &T1, expected: T1)
+where
+    T1: Clone + CheckType<T1> + PartialEq + Debug + Display,
+{
+    let input_checked = p.check_type();
+    let input_checked = match input_checked {
+        Ok(p) => p,
+        Err(e) => panic!("Type check failed: {}", e),
+    };
+
+    println!("Type check result for input:\n{}", input_checked);
+    println!("Expected type check result:\n{}", expected);
+    assert_eq!(input_checked, expected);
 }
 
 // Assert that the optimization result is the expected expression, block or program.

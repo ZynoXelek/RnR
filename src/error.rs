@@ -405,6 +405,10 @@ pub enum TypeError {
         expected: Type,
         found: Type,
     },
+    FunctionReturnsUninitialized {
+        func: FnDeclaration,
+        found: TypeVal,
+    },
     InvalidIfCondition {
         expr: Expr,
         found: Type,
@@ -530,6 +534,10 @@ impl TypeError {
             expected,
             found,
         }
+    }
+
+    pub fn function_returns_uninitialized(func: FnDeclaration, found: TypeVal) -> Self {
+        TypeError::FunctionReturnsUninitialized { func, found }
     }
 
     pub fn invalid_if_condition(expr: Expr, found: Type) -> Self {
@@ -683,6 +691,18 @@ impl fmt::Display for TypeError {
                     f,
                     "Invalid function return type: expected type '{}' for function '{}', but found type '{}'",
                     expected,
+                    func.get_signature_repr(0),
+                    found
+                )
+            }
+            TypeError::FunctionReturnsUninitialized { func, found } => {
+                write!(
+                    f,
+                    "Function returns uninitialized type: expected type '{}' for function '{}', but got '{}'",
+                    match func.ty {
+                        Some(ref ty) => ty,
+                        None => &Type::Unit,
+                    },
                     func.get_signature_repr(0),
                     found
                 )

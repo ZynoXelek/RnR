@@ -71,7 +71,7 @@ impl Array {
         } else {
             let index = indexes[0];
             let new_array = self.get_value(index).clone();
-    
+
             match new_array {
                 Expr::Lit(Literal::Array(mut array)) => {
                     array.modify_seq(&indexes[1..], new_value)?;
@@ -319,9 +319,7 @@ impl Literal {
     // To verify if an identifier is contained in the Literal
     pub fn contains_identifier(&self) -> bool {
         match self {
-            Literal::Array(arr) => {
-                arr.contains_identifier()
-            }
+            Literal::Array(arr) => arr.contains_identifier(),
             _ => false,
         }
     }
@@ -356,12 +354,22 @@ impl Expr {
         self == &empty
     }
 
+    //? Helpers for creation
+
     pub fn bin_op(o: BinOp, left: Expr, right: Expr) -> Self {
         Expr::BinOp(o, Box::new(left), Box::new(right))
     }
 
     pub fn un_op(o: UnOp, operand: Expr) -> Self {
         Expr::UnOp(o, Box::new(operand))
+    }
+
+    pub fn par(e: Expr) -> Self {
+        Expr::Par(Box::new(e))
+    }
+
+    pub fn if_then_else(cond: Expr, then_block: Block, else_block: Option<Block>) -> Self {
+        Expr::IfThenElse(Box::new(cond), then_block, else_block)
     }
 
     // Comparison parsing requires to identify whether the operator is a comparison operator
@@ -395,7 +403,9 @@ impl Expr {
         match self {
             Expr::Lit(lit) => lit.contains_identifier(),
             Expr::Ident(_) => true,
-            Expr::BinOp(_, left, right) => left.contains_identifier() || right.contains_identifier(),
+            Expr::BinOp(_, left, right) => {
+                left.contains_identifier() || right.contains_identifier()
+            }
             Expr::UnOp(_, operand) => operand.contains_identifier(),
             Expr::Par(e) => e.contains_identifier(),
             Expr::Call(_, _) => true, // A call requires an identifier to call the function,
@@ -733,11 +743,15 @@ impl Statement {
             Statement::Assign(left, right) => {
                 let res = left.contains_identifier() || right.contains_identifier();
                 if !res {
-                    eprintln!("/!\\ WARNING: Assignment statement does not contain any identifier /!\\");
+                    eprintln!(
+                        "/!\\ WARNING: Assignment statement does not contain any identifier /!\\"
+                    );
                 }
                 res
-            },
-            Statement::While(cond, block) => cond.contains_identifier() || block.contains_identifier(),
+            }
+            Statement::While(cond, block) => {
+                cond.contains_identifier() || block.contains_identifier()
+            }
             Statement::Expr(expr) => expr.contains_identifier(),
             Statement::Fn(fn_decl) => false, // The declaration of a function, similarly to a var, is not an identifier itself
         }
@@ -882,7 +896,7 @@ impl Block {
     pub fn is_unit(&self) -> bool {
         self.statements.is_empty() || self.semi // A block is of unit type if it is empty or ends with a semi colon
     }
-    
+
     // To verify if an identifier is contained in the Block
     pub fn contains_identifier(&self) -> bool {
         for stmt in &self.statements {

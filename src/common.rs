@@ -2,8 +2,17 @@ use mips::{instrs::Instrs, vm::Mips};
 
 use crate::error::{Error, EvalError, TypeError};
 
+// Made to evaluate the return type of an Expr, Statement, Block, etc...
 pub trait EvalType<T: Clone> {
     fn eval_type(&self) -> Result<T, TypeError>
+    where
+        T: Clone;
+}
+
+// Made to verify that the Expr, Statement, Block, etc... is valid (types relative) and
+// returns the same object but where let statements have their types annotated
+pub trait CheckType<T: Clone> {
+    fn check_type(&self) -> Result<T, TypeError>
     where
         T: Clone;
 }
@@ -15,7 +24,8 @@ pub trait Eval<T: Clone> {
 }
 
 pub trait Optimize<T: Clone> {
-    fn optimize(&self) -> Result<T, Error> //TODO: Use custom error
+    fn optimize(&self) -> Result<T, Error>
+    //TODO: Use custom error
     where
         T: Clone;
 }
@@ -70,6 +80,16 @@ where
     let bl = parse::<T1>(s);
     let v = bl.eval_type()?;
     println!("\nreturn {:?}", v);
+    Ok(v)
+}
+
+pub fn parse_check_type<T1>(s: &str) -> Result<T1, TypeError>
+where
+    T1: syn::parse::Parse + std::fmt::Display + Clone + CheckType<T1>,
+{
+    let bl = parse::<T1>(s);
+    let v = bl.check_type()?;
+    println!("\nreturn {}", v);
     Ok(v)
 }
 

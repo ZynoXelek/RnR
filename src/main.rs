@@ -7,9 +7,8 @@ use rnr::{
     asm_parse::parse_instrs,
     ast::Prog,
     backend::get_formatted_instrs,
-    common::{parse, Eval, EvalType, GetInstructions, Optimize},
+    common::{parse, CheckType, Eval, GetInstructions, Optimize},
     error::{Error, EvalError, TypeError},
-    type_check::TypeVal,
     vm::Val,
 };
 
@@ -180,15 +179,15 @@ fn ast_subcommand(prog: Prog, path: &str) -> io::Result<()> {
 
 //* Type check command: `--type_check` / `-t`
 
-fn type_check_subcommand(prog: Prog) -> Result<(), TypeError> {
+fn type_check_subcommand(prog: Prog) -> Result<Prog, TypeError> {
     // Type check the parsed AST
 
-    let prog_type: Result<TypeVal, TypeError> = prog.eval_type();
+    let checked_prog: Result<Prog, TypeError> = prog.check_type();
 
-    match prog_type {
-        Ok(_) => {
+    match checked_prog {
+        Ok(prog) => {
             println!(" * Type check: {}success!{}", GREEN_COLOR, DEFAULT_COLOR);
-            Ok(())
+            Ok(prog)
         }
         Err(e) => {
             eprintln!(" * Type check: {}error {}{}", RED_COLOR, e, DEFAULT_COLOR);
@@ -417,7 +416,7 @@ fn main() {
         // 2. Type check
         if args.type_check {
             println!("\n ----------------- ");
-            type_check_subcommand(prog.clone()).unwrap();
+            prog = type_check_subcommand(prog.clone()).unwrap();
 
             if args.code_gen && !args.optimize {
                 eprintln!(
@@ -448,7 +447,6 @@ fn main() {
 
             // 5. Code generation
             if args.optimize && args.code_gen {
-
                 //? Print a warning if an option that requires a missing previous step is used
                 if args.asm.is_some() && !args.code_gen {
                     eprintln!(

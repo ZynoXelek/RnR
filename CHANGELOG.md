@@ -100,6 +100,7 @@
 ## 2025-01-14
 
 - Redesign backend function calls so that it can accept any number of arguments.
+- Improved type checker so that it returns the same program with type annotations where they were missing. This way, the backend will have all the required data to properly define each variable.
 
 ## 2025-01-XX
 

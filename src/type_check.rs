@@ -2,10 +2,10 @@ use core::fmt;
 use std::collections::HashMap;
 
 use crate::ast::{
-    Arguments, BinOp, Block, Expr, FnDeclaration, Literal, Mutable, Parameter, Parameters, Prog,
-    Statement, Type, UnOp,
+    Arguments, Array, BinOp, Block, Expr, FnDeclaration, Literal, Mutable, Parameter, Parameters,
+    Prog, Statement, Type, UnOp,
 };
-use crate::common::{Eval, EvalType};
+use crate::common::{CheckType, Eval, EvalType};
 use crate::error::{EvalError, TypeError};
 use crate::intrinsics::*;
 
@@ -168,6 +168,84 @@ impl fmt::Display for TypeVal {
 
 //?#################################################################################################
 //?#                                                                                               #
+//?#          Helper structures to gather new expressions with their return types                  #
+//?#                                                                                               #
+//?#################################################################################################
+
+#[derive(Debug, Clone)]
+struct TyExpr {
+    ty: TypeVal,
+    expr: Expr,
+}
+
+impl TyExpr {
+    fn new(ty: TypeVal, expr: Expr) -> Self {
+        TyExpr { ty, expr }
+    }
+
+    fn get_type_val(&self) -> TypeVal {
+        self.ty.clone()
+    }
+
+    fn get_expr(&self) -> Expr {
+        self.expr.clone()
+    }
+
+    fn as_tuple(&self) -> (TypeVal, Expr) {
+        (self.ty.clone(), self.expr.clone())
+    }
+}
+
+#[derive(Debug, Clone)]
+struct TyStmt {
+    ty: TypeVal,
+    stmt: Statement,
+}
+
+impl TyStmt {
+    fn new(ty: TypeVal, stmt: Statement) -> Self {
+        TyStmt { ty, stmt }
+    }
+
+    fn get_type_val(&self) -> TypeVal {
+        self.ty.clone()
+    }
+
+    fn get_stmt(&self) -> Statement {
+        self.stmt.clone()
+    }
+
+    fn as_tuple(&self) -> (TypeVal, Statement) {
+        (self.ty.clone(), self.stmt.clone())
+    }
+}
+
+#[derive(Debug, Clone)]
+struct TyBlock {
+    ty: TypeVal,
+    block: Block,
+}
+
+impl TyBlock {
+    fn new(ty: TypeVal, block: Block) -> Self {
+        TyBlock { ty, block }
+    }
+
+    fn get_type_val(&self) -> TypeVal {
+        self.ty.clone()
+    }
+
+    fn get_block(&self) -> Block {
+        self.block.clone()
+    }
+
+    fn as_tuple(&self) -> (TypeVal, Block) {
+        (self.ty.clone(), self.block.clone())
+    }
+}
+
+//?#################################################################################################
+//?#                                                                                               #
 //?#                                           Evaluation                                          #
 //?#                                                                                               #
 //?#################################################################################################
@@ -280,7 +358,16 @@ impl UnOp {
 impl EvalType<TypeVal> for Expr {
     fn eval_type(&self) -> Result<TypeVal, TypeError> {
         let mut tvm = TVM::new();
-        tvm.eval_type_expr(self)
+        let res = tvm.eval_type_expr(self)?;
+        Ok(res.get_type_val())
+    }
+}
+
+impl CheckType<Expr> for Expr {
+    fn check_type(&self) -> Result<Expr, TypeError> {
+        let mut tvm = TVM::new();
+        let res = tvm.eval_type_expr(self)?;
+        Ok(res.get_expr())
     }
 }
 
@@ -289,61 +376,33 @@ impl EvalType<TypeVal> for Expr {
 impl EvalType<TypeVal> for Block {
     fn eval_type(&self) -> Result<TypeVal, TypeError> {
         let mut tvm = TVM::new();
-        tvm.eval_type_block(self)
+        let res = tvm.eval_type_block(self)?;
+        Ok(res.get_type_val())
+    }
+}
+
+impl CheckType<Block> for Block {
+    fn check_type(&self) -> Result<Block, TypeError> {
+        let mut tvm = TVM::new();
+        let res = tvm.eval_type_block(self)?;
+        Ok(res.get_block())
     }
 }
 
 //? ------------ Prog -------------
 
-impl EvalType<TypeVal> for Prog {
-    fn eval_type(&self) -> Result<TypeVal, TypeError> {
+// impl EvalType<TypeVal> for Prog {
+//     fn eval_type(&self) -> Result<TypeVal, TypeError> {
+//         let mut tvm = TVM::new();
+//         let res = tvm.eval_type_prog(self)?;
+//         Ok(res.get_type_val())
+//     }
+// }
+
+impl CheckType<Prog> for Prog {
+    fn check_type(&self) -> Result<Prog, TypeError> {
         let mut tvm = TVM::new();
-
-        // Set functions declarations in the TVM
-        for decl in self.0.iter() {
-            tvm.define_func(&decl)?;
-        }
-
-        // Check their correctness
-        for decl in self.0.iter() {
-            tvm.check_func_correctness(&decl)?;
-        }
-
-        // Look for a 'main' function
-        for decl in self.0.iter() {
-            // Does not support command line arguments for now
-            if decl.id == "main" {
-                // Make sure it has no parameters
-                if !decl.parameters.0.is_empty() {
-                    return Err(TypeError::main_with_parameters());
-                }
-
-                // Check that the return type is correct -> Should be Unit
-                //? Theoretically, can also be Result<(), E>, where E implements the std::error::Error trait
-                let return_type = &decl.ty;
-
-                if let Some(ty) = return_type {
-                    if *ty != Type::Unit {
-                        return Err(TypeError::main_with_invalid_type(ty.clone()));
-                    }
-                }
-
-                // Everything is fine
-                let prog_type = tvm.eval_type_block(&decl.body).unwrap(); // It should therefore be of Unit Type
-                let prog_type = prog_type.get_type();
-                match prog_type {
-                    Some(t) => {
-                        if t == Type::Unit {
-                            return Ok(TypeVal::Type(Type::Unit));
-                        } else {
-                            return Err(TypeError::main_with_invalid_type(t));
-                        }
-                    }
-                    None => unreachable!("Main function returns an uninitialized type"),
-                }
-            }
-        }
-        Err(TypeError::main_not_found())
+        tvm.check_type_prog(self)
     }
 }
 
@@ -384,7 +443,6 @@ pub struct TVM {
 }
 
 impl TVM {
-    #![allow(clippy::new_without_default)]
     pub fn new() -> Self {
         let mut tvm = TVM {
             var_env: vec![],
@@ -536,12 +594,13 @@ impl TVM {
         }
     }
 
-    fn check_func_correctness(&mut self, func: &FnDeclaration) -> Result<(), TypeError> {
+    fn check_func_correctness(&mut self, func: &FnDeclaration) -> Result<FnDeclaration, TypeError> {
         // This should create a new TVM, with the correct initial variable defined, and the correct accessible functions
         // Then, it can check the body of the function, and its return type
+        // It can therefore return the updated function declaration with every missing type annotation
 
         let mut tvm = self.from_function_call(&func.parameters);
-        let return_type = tvm.eval_type_block(&func.body)?;
+        let (return_type, new_block) = tvm.eval_type_block(&func.body)?.as_tuple();
 
         // Verify that it matches the declared return type
         let func_type = if let Some(ty) = &func.ty {
@@ -550,7 +609,13 @@ impl TVM {
             Type::Unit.into()
         };
 
-        if return_type.get_type().unwrap() != func_type {
+        // Verifying that the return type is initialized and the expected one
+        if return_type.is_uninitialized() {
+            return Err(TypeError::function_returns_uninitialized(
+                func.clone(),
+                return_type,
+            ));
+        } else if return_type.get_type().unwrap() != func_type {
             return Err(TypeError::invalid_function_return_type(
                 func.clone(),
                 func_type,
@@ -558,7 +623,13 @@ impl TVM {
             ));
         }
 
-        Ok(())
+        let new_func_decl = FnDeclaration {
+            id: func.id.clone(),
+            parameters: func.parameters.clone(),
+            ty: Some(func_type),
+            body: new_block,
+        };
+        Ok(new_func_decl)
     }
 
     fn get_func(&self, name: &str) -> Result<FnDeclaration, TypeError> {
@@ -593,38 +664,22 @@ impl TVM {
         s
     }
 
-    fn pretty_print_state(&self) -> String {
+    pub fn pretty_string_state(&self) -> String {
         let mut s = String::new();
         s.push_str(&format!("Variables: {:?}\n", self.var_env));
         s.push_str(&format!("Functions: {}\n", self.pretty_string_func_env()));
         s
     }
 
-    fn define_block_functions(&mut self, block: &Block) -> Result<(), TypeError> {
-        // This scans the whole block for function definitions in order to define them in the TVM
-        // and be able to call them before their definition
-        // each function is then checked for correctness
-        let mut new_funcs: Vec<FnDeclaration> = Vec::new();
-
-        for stmt in block.statements.iter() {
-            match stmt {
-                Statement::Fn(decl) => {
-                    self.define_func(&decl)?;
-                    new_funcs.push(decl.clone());
-                }
-                _ => (),
-            }
-        }
-
-        // Now that functions are defined, we can check their correctness
-        for func in new_funcs.iter() {
-            self.check_func_correctness(func)?;
-        }
-
-        Ok(())
+    pub fn pretty_print_state(&self) {
+        println!("{}", self.pretty_string_state());
     }
 
-    fn check_intrinsic_call(&mut self, name: &str, args: &Arguments) -> Result<TypeVal, TypeError> {
+    //? ---------------------------------------------------------------------------------
+    //?                                  Expressions
+    //? ---------------------------------------------------------------------------------
+
+    fn check_intrinsic_call(&mut self, name: &str, args: &Arguments) -> Result<TyExpr, TypeError> {
         // Very specific but do not really know how to improve.
         // Could at least move this code to the intrinsic definition so it is centralized
         if let Some(intrinsic) = self.intrinsics.get(name) {
@@ -637,7 +692,7 @@ impl TVM {
         }
     }
 
-    fn check_println_call(&mut self, args: &Arguments) -> Result<TypeVal, TypeError> {
+    fn check_println_call(&mut self, args: &Arguments) -> Result<TyExpr, TypeError> {
         // We need to verify that:
         // - There is at least one argument, of type String
         // - There are as much additional arguments as there are '{}' or '{:?}' in the string, whatever the types (at least for now)
@@ -655,7 +710,9 @@ impl TVM {
         }
 
         let first_arg = &args.0[0];
-        let first_arg_type = self.eval_type_expr(first_arg)?;
+        let (first_arg_type, new_first_arg) = self.eval_type_expr(first_arg)?.as_tuple();
+
+        let mut new_args: Vec<Expr> = vec![new_first_arg];
 
         if first_arg_type.get_type().unwrap() != Type::String {
             return Err(TypeError::invalid_argument(
@@ -689,18 +746,28 @@ impl TVM {
 
         // Verifying the types of the additional arguments (any, but initialized)
         for (i, arg) in args.0.iter().skip(1).enumerate() {
-            let arg_type = self.eval_type_expr(arg)?;
+            let (arg_type, new_arg) = self.eval_type_expr(arg)?.as_tuple();
             if arg_type.is_uninitialized() {
                 return Err(TypeError::uninitialized_variable((*arg).clone()));
             }
+            new_args.push(new_arg);
         }
 
-        Ok(TypeVal::Type(Type::Unit)) // println! returns unit
+        let return_type = TypeVal::Type(Type::Unit); // println! returns unit
+        let new_args = Arguments::new(new_args);
+        let new_call = Expr::Call("println!".to_string(), new_args);
+        Ok(TyExpr::new(return_type, new_call))
     }
 
-    pub fn eval_type_expr(&mut self, expr: &Expr) -> Result<TypeVal, TypeError> {
+    fn eval_type_expr(&mut self, expr: &Expr) -> Result<TyExpr, TypeError> {
+        // A basic expression will not be modified in any way, so we can return it as is
+        let expr_copy = expr.clone();
+
         match expr {
-            Expr::Ident(name) => self.get_var(name),
+            Expr::Ident(name) => {
+                let var_type = self.get_var(name)?;
+                Ok(TyExpr::new(var_type, expr_copy))
+            }
             Expr::Lit(lit) => {
                 // We need a special case for arrays, as we must check that it is valid in size and inner types
 
@@ -715,15 +782,19 @@ impl TVM {
 
                         if size == 0 {
                             // Empty array, cannot infer the type from it, it could be anything
-                            return Ok(TypeVal::from(Type::Array(Box::new(Type::Any), 0)));
+                            let return_type = TypeVal::from(Type::Array(Box::new(Type::Any), 0));
+                            return Ok(TyExpr::new(return_type, expr_copy));
                         }
+
+                        let mut new_exprs: Vec<Expr> = Vec::new();
 
                         let first_type = {
                             let expr = expressions.first().unwrap();
-                            let expr_type = self.eval_type_expr(expr)?;
+                            let (expr_type, new_expr) = self.eval_type_expr(expr)?.as_tuple();
                             if expr_type.is_uninitialized() {
                                 return Err(TypeError::uninitialized_variable((*expr).clone()));
                             }
+                            new_exprs.push(new_expr);
                             expr_type.get_type().unwrap()
                         };
 
@@ -735,7 +806,7 @@ impl TVM {
                         for i in 1..expressions.len() {
                             let expr = &expressions[i];
 
-                            let expr_type = self.eval_type_expr(expr)?;
+                            let (expr_type, new_expr) = self.eval_type_expr(expr)?.as_tuple();
                             if expr_type.is_uninitialized() {
                                 return Err(TypeError::uninitialized_variable((*expr).clone()));
                             }
@@ -745,6 +816,7 @@ impl TVM {
                                 are_all_same = false;
                             }
 
+                            new_exprs.push(new_expr);
                             types.push(expr_type);
                         }
 
@@ -752,27 +824,33 @@ impl TVM {
                             return Err(TypeError::array_inconsistent_types(expr.clone(), types));
                         }
 
-                        Ok(TypeVal::from(Type::Array(Box::new(first_type), size)))
+                        let return_type = TypeVal::from(Type::Array(Box::new(first_type), size));
+                        let new_array = Array::new(new_exprs);
+                        Ok(TyExpr::new(
+                            return_type,
+                            Expr::Lit(Literal::Array(new_array)),
+                        ))
                     }
-                    _ => Ok(TypeVal::from(lit.clone())),
+                    _ => Ok(TyExpr::new(TypeVal::from(lit.clone()), expr_copy)),
                 }
             }
             Expr::BinOp(op, left, right) => {
-                let left_type = self.eval_type_expr(left)?;
+                let (left_type, left_expr) = self.eval_type_expr(left)?.as_tuple();
                 // If it is uninitialized, we have an issue and won't be able to apply the binary operation
                 if left_type.is_uninitialized() {
                     return Err(TypeError::uninitialized_variable((**left).clone()));
                 }
 
-                let right_type = self.eval_type_expr(right)?;
+                let (right_type, right_expr) = self.eval_type_expr(right)?.as_tuple();
                 // If it is uninitialized, we have an issue and won't be able to apply the binary operation
                 if right_type.is_uninitialized() {
                     return Err(TypeError::uninitialized_variable((**right).clone()));
                 }
 
+                let new_binop = Expr::bin_op(op.clone(), left_expr, right_expr);
                 let binop_res = op.eval_type(left_type.clone(), right_type);
                 match binop_res {
-                    Ok(t) => Ok(t),
+                    Ok(t) => Ok(TyExpr::new(t, new_binop)),
                     Err(e) => {
                         // Special case for arrays to have a better error message
                         if op.clone() == BinOp::Get {
@@ -786,13 +864,15 @@ impl TVM {
                 }
             }
             Expr::UnOp(op, operand) => {
-                let operand_type = self.eval_type_expr(operand)?;
+                let (operand_type, new_operand) = self.eval_type_expr(operand)?.as_tuple();
                 // If it is uninitialized, we have an issue and won't be able to apply the unary operation
                 if operand_type.is_uninitialized() {
                     return Err(TypeError::uninitialized_variable((**operand).clone()));
                 }
 
-                op.eval_type(operand_type)
+                let new_unop = Expr::un_op(op.clone(), new_operand);
+                let return_type = op.eval_type(operand_type)?;
+                Ok(TyExpr::new(return_type, new_unop))
             }
             Expr::Par(expr) => self.eval_type_expr(expr),
             Expr::Call(name, args) => {
@@ -820,8 +900,11 @@ impl TVM {
                     ));
                 }
 
+                let mut new_args: Vec<Expr> = Vec::new();
+
                 for (param, arg) in params.0.iter().zip(args.0.iter()) {
-                    let arg_type = self.eval_type_expr(arg)?;
+                    let (arg_type, new_arg) = self.eval_type_expr(arg)?.as_tuple();
+
                     if arg_type.get_type().unwrap() != param.ty {
                         return Err(TypeError::invalid_argument(
                             func.clone(),
@@ -832,10 +915,15 @@ impl TVM {
                     } else if arg_type.is_uninitialized() {
                         return Err(TypeError::uninitialized_variable((*arg).clone()));
                     }
+
+                    new_args.push(new_arg);
                 }
 
                 // The function is correctly called, returning its type
-                Ok(TypeVal::from(func.get_return_type()))
+                let return_type = TypeVal::from(func.get_return_type());
+                let new_args = Arguments::new(new_args);
+                let new_call = Expr::Call(name.clone(), new_args);
+                Ok(TyExpr::new(return_type, new_call))
             }
             Expr::IfThenElse(cond, then_block, else_block) => {
                 // Here, we have to verify that:
@@ -847,7 +935,7 @@ impl TVM {
                 // Store the initial variable state
                 let initial_state = self.var_env.clone();
 
-                let cond_type = self.eval_type_expr(cond)?;
+                let (cond_type, new_cond) = self.eval_type_expr(cond)?.as_tuple();
 
                 // It should be an initialized boolean
                 if cond_type.get_type().unwrap() != Type::Bool {
@@ -859,7 +947,8 @@ impl TVM {
                     return Err(TypeError::uninitialized_variable((**cond).clone()));
                 }
 
-                let then_type = self.eval_type_block(then_block)?;
+                let (then_type, new_then) = self.eval_type_block(then_block)?.as_tuple();
+                let mut new_else: Option<Block> = None;
 
                 // If there is a else block, we have to check that both blocks return the same type
                 if let Some(else_block) = else_block {
@@ -868,7 +957,8 @@ impl TVM {
                     // Restores the initial state
                     self.var_env = initial_state.clone();
 
-                    let else_type = self.eval_type_block(else_block)?;
+                    let (else_type, new_else_inner) = self.eval_type_block(else_block)?.as_tuple();
+                    new_else = Some(new_else_inner);
 
                     // Stores the state after the else block
                     let else_state = self.var_env.clone();
@@ -885,14 +975,23 @@ impl TVM {
                     }
                 }
 
-                Ok(then_type)
+                let return_type = then_type;
+                let new_if = Expr::if_then_else(new_cond, new_then, new_else);
+                Ok(TyExpr::new(return_type, new_if))
             }
-            Expr::Block(block) => self.eval_type_block(block),
+            Expr::Block(block) => {
+                let (block_type, new_block) = self.eval_type_block(block)?.as_tuple();
+                Ok(TyExpr::new(block_type, Expr::Block(new_block)))
+            }
             // _ => unimplemented!("type eval not implemented for expression {:?}", expr),
         }
     }
 
-    pub fn eval_type_stmt(&mut self, stmt: &Statement) -> Result<TypeVal, TypeError> {
+    //? ---------------------------------------------------------------------------------
+    //?                                      Statements
+    //? ---------------------------------------------------------------------------------
+
+    fn eval_type_stmt(&mut self, stmt: &Statement) -> Result<TyStmt, TypeError> {
         match stmt {
             Statement::Let(mutable, name, ty, expr) => {
                 // We have to check that the type is correct.
@@ -900,21 +999,16 @@ impl TVM {
                 // If there are both a type and an expression, we have to check that the expression type is correct
                 // If there is none, it is an error
 
-                // First, we have to check if a variable with the same name is already defined in the same scope
-                // and if it is never initialized.
-                let scope_vars = self.var_env.last().unwrap();
-                if let Some(val) = scope_vars.get(name) {
-                    if val._is_uninitialized_with_param(true) {
-                        return Err(TypeError::never_initialized_variable(name.clone()));
-                    }
-                }
-
                 let mut val: TypeVal = TypeVal::uninitialized();
+                let mut new_expr: Option<Expr> = None;
                 let mut expr_type: Option<Type> = None;
 
+                let mut final_type: Option<Type> = ty.clone();
+
                 if let Some(e) = expr {
-                    let expr_val_type = self.eval_type_expr(e)?;
+                    let (expr_val_type, new_expr_inner) = self.eval_type_expr(e)?.as_tuple();
                     expr_type = Some(expr_val_type.get_type().unwrap());
+                    new_expr = Some(new_expr_inner);
                 }
 
                 if ty.is_some() && !ty.clone().unwrap().contains_any() {
@@ -935,6 +1029,7 @@ impl TVM {
                     }
                     val = ty.into();
                 } else if expr_type.is_some() {
+                    final_type = expr_type.clone();
                     val = expr_type.unwrap().into();
                 }
 
@@ -953,7 +1048,8 @@ impl TVM {
 
                 self.define_var(name, val.clone())?;
 
-                Ok(TypeVal::Type(Type::Unit)) // Let statement returns unit
+                let new_let = Statement::Let(mutable.clone(), name.clone(), final_type, new_expr);
+                Ok(TyStmt::new(TypeVal::Type(Type::Unit), new_let)) // Let statement returns unit
             }
             Statement::Assign(left, right) => {
                 // We have to check that the left expression is a variable and that the right expression is of the same type
@@ -965,14 +1061,15 @@ impl TVM {
                     None => return Err(TypeError::assignment_invalid_left_expr((*left).clone())),
                 };
 
-                let left_type = self.eval_type_expr(left)?; // This will also verify that the array get is correct (uses integer indexes)
+                // This will also verify that the array get is correct (uses integer indexes)
+                let (left_type, left_expr) = self.eval_type_expr(left)?.as_tuple();
 
                 let var_type = self.get_var(&var_ident)?;
                 if !var_type.is_mutable() && !var_type.is_uninitialized() {
                     return Err(TypeError::assignment_invalid_left_expr((*left).clone()));
                 }
 
-                let right_type = self.eval_type_expr(right)?;
+                let (right_type, right_expr) = self.eval_type_expr(right)?.as_tuple();
 
                 // It must be of correct initialized type
                 if left_type.get_type().is_some() {
@@ -1015,12 +1112,13 @@ impl TVM {
                     }
                 }
 
-                Ok(TypeVal::Type(Type::Unit)) // Assign statement returns unit
+                let new_assign = Statement::Assign(left_expr, right_expr);
+                Ok(TyStmt::new(TypeVal::Type(Type::Unit), new_assign)) // Assign statement returns unit
             }
             Statement::While(cond, block) => {
                 // We should verify that the condition is an initialized boolean
                 // And that the block returns unit
-                let cond_type = self.eval_type_expr(cond)?;
+                let (cond_type, new_cond) = self.eval_type_expr(cond)?.as_tuple();
 
                 // It should be an initialized boolean
                 if cond_type.is_uninitialized() {
@@ -1032,7 +1130,7 @@ impl TVM {
                     ));
                 }
 
-                let block_type = self.eval_type_block(block)?;
+                let (block_type, new_block) = self.eval_type_block(block)?.as_tuple();
 
                 if block_type.get_type().unwrap() != Type::Unit {
                     return Err(TypeError::while_block_type_mismatch(
@@ -1040,55 +1138,161 @@ impl TVM {
                     ));
                 }
 
-                Ok(TypeVal::Type(Type::Unit)) // While statement returns unit
+                let new_while = Statement::While(new_cond, new_block);
+                Ok(TyStmt::new(TypeVal::Type(Type::Unit), new_while)) // While statement returns unit
             }
-            Statement::Expr(expr) => self.eval_type_expr(expr),
+            Statement::Expr(expr) => {
+                let (expr_ty, new_expr) = self.eval_type_expr(expr)?.as_tuple();
+                let new_stmt = Statement::Expr(new_expr);
+                Ok(TyStmt::new(expr_ty, new_stmt))
+            }
             Statement::Fn(fn_decl) => {
                 self.define_func(&fn_decl)?;
-                Ok(Literal::Unit.into()) // Returns a unit value
+
+                let return_type = Literal::Unit.into(); // Function declaration returns unit
+                let new_stmt = stmt.clone(); // There is no modification to be done here -> it has already been done in the block process
+                Ok(TyStmt::new(return_type, new_stmt))
             } // _ => unimplemented!("type eval not implemented for statement {:?}", stmt),
         }
     }
 
-    pub fn eval_type_block(&mut self, block: &Block) -> Result<TypeVal, TypeError> {
+    //? ---------------------------------------------------------------------------------
+    //?                                      Blocks
+    //? ---------------------------------------------------------------------------------
+
+    fn define_block_functions(&mut self, block: &Block) -> Result<Vec<Statement>, TypeError> {
+        // This scans the whole block for function definitions in order to define them in the TVM
+        // and be able to call them before their definition
+        // each function is then checked for correctness
+        let mut func_tracking: Vec<(usize, FnDeclaration)> = Vec::new(); // Track the statement idx of each function
+
+        let mut final_stmts: Vec<Statement> = block.statements.clone();
+
+        for i in 0..final_stmts.len() {
+            let stmt = &final_stmts[i];
+            match stmt {
+                Statement::Fn(decl) => {
+                    self.define_func(&decl)?;
+                    func_tracking.push((i, decl.clone()));
+                }
+                _ => (),
+            }
+        }
+
+        // Now that functions are defined, we can check their correctness
+        for (idx, func) in func_tracking.iter() {
+            let new_func = self.check_func_correctness(func)?;
+            let new_stmt = Statement::Fn(new_func);
+            final_stmts[*idx] = new_stmt;
+        }
+
+        Ok(final_stmts)
+    }
+
+    fn eval_type_block(&mut self, block: &Block) -> Result<TyBlock, TypeError> {
         // We get in a new scope
         self.add_new_scope();
 
         // Scan the block for function definitions and define them in the TVM
-        self.define_block_functions(block)?;
+        let new_statements = self.define_block_functions(block)?;
 
         // DEBUG
         //eprintln!("Evaluating block...");
         //eprintln!("Block is:\n{}", block);
-        //eprintln!("Actual state:\n{}", self.pretty_print_state());
+        //eprintln!("Actual state:\n{}", self.pretty_string_state());
 
         // Preparing to return the result of the block
         // The only possibility for a return value is the last statement of the block, not followed by a semicolon, and being an expression (can be a function call)
         let mut result_type: TypeVal = TypeVal::Type(Type::Unit);
-        let size = block.statements.len();
+        let size = new_statements.len();
+        let mut final_statements: Vec<Statement> = Vec::new();
+
+        // When processing each statement, we should keep track of the defined variables at each point
+        // whether they have been assigned a type or not, and where is their let statement
+        // so we can update it when it is defined once again, or before removing the scope
+        let mut var_tracking: HashMap<String, (usize, Option<Type>)> = HashMap::new();
 
         for index in 0..size {
-            let stmt = &block.statements[index];
+            let stmt = &new_statements[index];
             match stmt {
-                Statement::Fn(_) => continue, // Function are already defined in the TVM
+                Statement::Fn(_) => {
+                    // Function definitions have already been defined and checked
+                    final_statements.push(stmt.clone());
+                }
                 _ => {
+                    // If we are about to define a new variable, we have to check if a variable with the same name is already defined in the same scope and:
+                    // 1. If it is never initialized, it is an error
+                    // 2. If it is now initialized, but was not at its definition, we should update its Let statement with the final type.
+                    match stmt {
+                        Statement::Let(_, var_name, _, _) => {
+                            let scope_vars = self.var_env.last().unwrap();
+                            if let Some(val) = scope_vars.get(var_name) {
+                                if val._is_uninitialized_with_param(true) {
+                                    return Err(TypeError::never_initialized_variable(
+                                        var_name.clone(),
+                                    ));
+                                }
+
+                                // It has been correctly initialized at some point
+                                let final_type = val.get_type().unwrap();
+
+                                // Now we will update the Let statement type if needed
+                                if let Some((def_idx, ty)) = var_tracking.get(var_name) {
+                                    let mut should_modify_let = false;
+
+                                    if let Some(ty) = ty {
+                                        if ty.contains_any() {
+                                            // The it means the type is not precise enough and we should replace it with the final one
+                                            should_modify_let = true;
+                                        }
+                                    } else {
+                                        // There was no type annotation, we should add it
+                                        should_modify_let = true;
+                                    }
+
+                                    if should_modify_let {
+                                        let initial_stmt = final_statements[*def_idx].clone();
+                                        let new_stmt = match initial_stmt {
+                                            Statement::Let(mutable, name, _, expr) => {
+                                                Statement::Let(mutable, name, Some(final_type), expr)
+                                            }
+                                            _ => unreachable!("Variable tracking should only track Let statements"),
+                                        };
+                                        final_statements[*def_idx] = new_stmt;
+                                    }
+                                }
+                            }
+                        }
+                        _ => {}
+                    }
+
+                    let (stmt_type, new_stmt) = self.eval_type_stmt(stmt)?.as_tuple();
+
+                    // Updating the var_tracking if a new variable has been defined
+                    match new_stmt.clone() {
+                        Statement::Let(_, var_name, ty, _) => {
+                            var_tracking.insert(var_name.clone(), (index, ty));
+                        }
+                        _ => {}
+                    }
+
                     if index == size - 1 && !block.semi {
                         // last statement
-                        result_type = self.eval_type_stmt(stmt)?;
-                    } else {
-                        self.eval_type_stmt(stmt)?;
+                        result_type = stmt_type;
                     }
+
+                    final_statements.push(new_stmt);
                 }
             }
 
             // DEBUG
-            //eprintln!("Current block state:\n{}", self.pretty_print_state());
+            //eprintln!("Current block state:\n{}", self.pretty_string_state());
         }
 
         // DEBUG
         //eprintln!("Finished evaluating block...");
         //eprintln!("Block was:\n{}", block);
-        //eprintln!("Actual state:\n{}", self.pretty_print_state());
+        //eprintln!("Actual state:\n{}", self.pretty_string_state());
         //eprintln!("Block result value is {:?} (semi = {})", result, block.semi);
 
         // Before removing scope, we need to verify that each variable has been initialized
@@ -1098,12 +1302,107 @@ impl TVM {
             if val._is_uninitialized_with_param(true) {
                 return Err(TypeError::never_initialized_variable(name.clone()));
             }
+
+            // Moreover, we should update every remaining let statement with the final type of the variable
+            let final_type = val.get_type().unwrap();
+
+            // Now we will update the Let statement type if needed
+            if let Some((def_idx, ty)) = var_tracking.get(name) {
+                let mut should_modify_let = false;
+
+                if let Some(ty) = ty {
+                    if ty.contains_any() {
+                        // The it means the type is not precise enough and we should replace it with the final one
+                        should_modify_let = true;
+                    }
+                } else {
+                    // There was no type annotation, we should add it
+                    should_modify_let = true;
+                }
+
+                if should_modify_let {
+                    let initial_stmt = final_statements[*def_idx].clone();
+                    let new_stmt = match initial_stmt {
+                        Statement::Let(mutable, name, _, expr) => {
+                            Statement::Let(mutable, name, Some(final_type), expr)
+                        }
+                        _ => unreachable!("Variable tracking should only track Let statements"),
+                    };
+                    final_statements[*def_idx] = new_stmt;
+                }
+            }
         }
 
         // Removing the scope from the stack
         self.remove_scope();
 
+        let final_block = Block::new(final_statements, block.semi);
+
         // Returning the result of the block
-        Ok(result_type)
+        Ok(TyBlock::new(result_type, final_block))
+    }
+
+    //? ---------------------------------------------------------------------------------
+    //?                                      Programs
+    //? ---------------------------------------------------------------------------------
+
+    // This function verifies that the program is valid
+    // Then, it returns the resulting program with type annotations where they were lacking
+    pub fn check_type_prog(&mut self, prog: &Prog) -> Result<Prog, TypeError> {
+        let prog_functions = prog.0.clone();
+
+        // Set functions declarations in the TVM
+        for decl in prog_functions.iter() {
+            self.define_func(&decl)?;
+        }
+
+        let mut new_functions: Vec<FnDeclaration> = Vec::new();
+
+        // Check their correctness
+        for decl in prog_functions.iter() {
+            let new_func = self.check_func_correctness(&decl)?;
+            new_functions.push(new_func);
+        }
+
+        // Look for a 'main' function
+        for decl in new_functions.iter() {
+            // Does not support command line arguments for now
+            if decl.id == "main" {
+                // Make sure it has no parameters
+                if !decl.parameters.0.is_empty() {
+                    return Err(TypeError::main_with_parameters());
+                }
+
+                // Check that the return type is correct -> Should be Unit
+                //? Theoretically, can also be Result<(), E>, where E implements the std::error::Error trait
+                let return_type = &decl.ty;
+
+                if let Some(ty) = return_type {
+                    if *ty != Type::Unit {
+                        return Err(TypeError::main_with_invalid_type(ty.clone()));
+                    }
+                }
+
+                // Here it means everything is fine because function has already been checked
+                let new_prog = Prog::new(new_functions);
+                return Ok(new_prog);
+
+                // TODO: Remove if unnecessary
+                // // Everything is fine
+                // let prog_type = self.eval_type_block(&decl.body).unwrap().get_type_val(); // It should therefore be of Unit Type
+                // let prog_type = prog_type.get_type();
+                // match prog_type {
+                //     Some(t) => {
+                //         if t == Type::Unit {
+                //             return Ok(TypeVal::Type(Type::Unit));
+                //         } else {
+                //             return Err(TypeError::main_with_invalid_type(t));
+                //         }
+                //     }
+                //     None => unreachable!("Main function returns an uninitialized type"),
+                // }
+            }
+        }
+        Err(TypeError::main_not_found())
     }
 }
