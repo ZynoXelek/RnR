@@ -1,10 +1,11 @@
 # RnR: Rust in Rust
 
-This project aims to implement a compiler able to manage a subset of the Rust language.
+This project aims to implement a compiler able to manage a subset of the Rust language, as part of the LTU **Compiler construction and formal languages** course.
 
-The compiler is coded in Rust, and supports the basics of the Rust language.
+The compiler is implemented in Rust, and supports the basics of the Rust language.
+It uses the Mips crate from the teacher for the backend code generation.
 
-## Types
+## Implemented Types
 
 The implemented types are the following:
 
@@ -15,7 +16,7 @@ The implemented types are the following:
 - **Arrays**: arrays can be defined using any of the existing types.
 <!-- - **References** (WIP) -->
 
-## Operations
+## Implemented Operations
 
 The implemented operations are the following:
 
@@ -30,6 +31,28 @@ The implemented operations are the following:
   - **<**, **<=**, **>=**, **>**: comparison operations for integers and Strings
   - **==**, **!=**: comparison operations for any type
   - **\[i\]**: get operation for arrays
+
+## Examples of valid code
+
+Here is an example of a small program that RnR can compile. You can find other in `./examples`.
+
+```rust
+// An example program introducing a simple recursive factorial function
+
+fn fact(n: i32) -> i32 {
+    if n == 0 {
+        1
+    } else {
+        n * fact(n - 1)
+    }
+}
+
+fn main() {
+    let n = 5;
+    let a = fact(n);
+    println!("{}! = {}", n, a);
+}
+```
 
 ## How to use it
 
@@ -206,3 +229,9 @@ The RnR parser uses the **syn** crate. It implements a subset of it thanks to th
 ### CLI
 
 The Cli uses the **clap** crate to parse the input commands.
+
+### Backend
+
+The backend is emulated in a virtual machine which copies a subset of the behavior of the MIPS 3k processor. This crate can be found [here](https://vesuvio-git.neteq.ltu.se/pln/mips).
+
+> Note: The backend code does not support terminal printing. Therefore, `println!` calls can only be verified by evaluating the parsed AST in the RnR virtual machine (`-v`).
