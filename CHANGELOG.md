@@ -101,6 +101,7 @@
 
 - Redesign backend function calls so that it can accept any number of arguments.
 - Improved type checker so that it returns the same program with type annotations where they were missing. This way, the backend will have all the required data to properly define each variable.
+- Updated EBNF.md to describe how to write an entire syntactically valid program.
 
 ## 2025-01-XX
 
@@ -111,32 +112,24 @@
 
 **Mandatory:**
 
-- CLI improve help and add one for each command
 - Improve custom errors
-- Improve arrays in EBNF
 - Write SOS file
 - Write type rules
 - Write REFLECTION.md (including some additional feedback on how it went, when it was hard and everything... + What we have learnt)
 - UPDATE README
+- Export as a real `rnr` executable
 
 **Optional:**
 
-Primary:
-
-- AST optimizations to have a simpler backend
 - Backend optimizations
-- Backend support for functions with any number of arguments (refactor the frame stack to remove arg1, arg2, arg3 and use the intermediate scopes as I already do)
 - Implement arrays in backend
-- Rework Arrays and especially array assignation because it only supports a single assignation for now -> Do not support `a[1][2] = 3;` for instance.
 - Implement references everywhere
 - Implement ownership?
+
+**For future additional improvements:**
+
 - Implement custom struct?
 - Add support for CONSTANT expression in array size, and any non unit type expression in the init value during array definition. It should support any valid type expression.
-
-Secondary:
-
 - May want to add usize type for indexing (would be useful for ranges as well). May need to add "as" keyword then to convert i32 to usize.
-- Add return statement to be able to return from a while.
-- Similarly, add break statement.
+- Add `return x;` statement to be able to return from a function early. Add `break;` and `continue;` statements for 'while' and 'for' loops. Break statements can return a value from an infinite loop: `break x;`.
 - Add for loops. (Need to add ranges then, which could benefit from the usize type)
-- Optimize some evaluations?

@@ -50,7 +50,7 @@ struct Args {
         short = 'i',
         long = "input",
         value_name = "PATH",
-        help = "Path to the input file"
+        help = "Path to the input file to read the program from"
     )]
     input: Option<FilePath>,
 
@@ -64,7 +64,7 @@ struct Args {
     #[arg(
         short = 'o',
         long = "optimize",
-        help = "Optimize the input program to remove dead code"
+        help = "Optimize the input program to remove dead code (requires type checking)"
     )]
     optimize: bool,
 
@@ -72,7 +72,7 @@ struct Args {
         short = 'a',
         long = "ast",
         value_name = "PATH",
-        help = "Path to the AST output file (is optimized if --optimize is set)"
+        help = "Write the read/generated AST to the given output file (is optimized if --optimize is set)"
     )]
     ast: Option<FilePath>,
 
@@ -80,24 +80,28 @@ struct Args {
         short = 'v',
         long = "virtual_machine",
         alias = "vm",
-        help = "Run the program in the RnR virtual machine"
+        help = "Run the program in the RnR virtual machine (requires code optimization)"
     )]
     virtual_machine: bool,
 
-    #[arg(short = 'c', long = "code_gen", help = "Generate the backend ASM code")]
+    #[arg(
+        short = 'c',
+        long = "code_gen",
+        help = "Generate the backend ASM code (requires code optimization)"
+    )]
     code_gen: bool,
 
     #[arg(
         long = "asm",
         value_name = "PATH",
-        help = "Path to the ASM output file"
+        help = "Write the generated ASM to the given output file (requires code generation)"
     )] // No short since it would be ambiguous with the `--ast` flag
     asm: Option<FilePath>,
 
     #[arg(
         short = 'r',
         long = "run",
-        help = "Run the generated ASM code using the Mips VM"
+        help = "Run the generated ASM code using the Mips VM (requires code generation)"
     )]
     run: bool,
 
@@ -105,7 +109,7 @@ struct Args {
         long = "asm_input",
         alias = "asmi",
         value_name = "PATH",
-        help = "Path to the asm input file to run the backend from"
+        help = "Read an ASM representation from the given input file. The '--run' option will run this one instead. (incompatible with other flags)"
     )]
     asm_input: Option<FilePath>,
 }

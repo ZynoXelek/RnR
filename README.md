@@ -13,7 +13,7 @@ The implemented types are the following:
 - **bool**: booleans
 - **String**: to be able to print things in the terminal
 - **Arrays**: arrays can be defined using any of the existing types.
-- **References** (WIP)
+<!-- - **References** (WIP) -->
 
 ## Operations
 
@@ -22,8 +22,8 @@ The implemented operations are the following:
 - Unary Operators
   - **!**: boolean negation
   - **-**: integer negation
-  - **&**: reference (WIP)
-  - **\***: pointer (WIP)
+  <!-- - **&**: reference (WIP)
+  - **\***: pointer (WIP) -->
 - Binary Operators
   - **+**, **-**, **\***, **/**: basic operations for integers only
   - **&&**, **||**: basic operations for booleans only
@@ -189,6 +189,13 @@ Or
 ```
 
 This process requires that the code generation option is used.
+
+### Recommended commands
+
+The most useful commands are therefore the two following ones:
+
+- Reading a custom file, type checking it, optimizing it, and running it through the virtual machine: `rnr -i <path_to_my_file> -tov`
+- Reading a custom file, type checking it, optimizing it, generating the ASM code and running it: `rnr -i <path_to_my_file> -tovcr`
 
 ## Some additional remarks on the project
 

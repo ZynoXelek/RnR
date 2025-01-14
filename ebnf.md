@@ -1,6 +1,23 @@
-# EBNF Grammar
+# RnR EBNF Grammar
 
-Your EBNF grammar goes here.
+Here is the EBNF grammar of the whole RnR language.
+
+It does not take into account the **semantical validity** of a program=, since it does not describe how types are verified. However, it explains how to write a **syntactically valid** program.
+
+## Legend
+
+I have used the following syntax (from the [wikipedia page](https://en.wikipedia.org/wiki/Extended_Backus%E2%80%93Naur_form#Table_of_symbols)):
+
+| Usage   | Notation    |
+| ---    | ---   |
+| definition | = |
+| concatenation | , |
+| termination | ; |
+| alternation | \| |
+| optional (none or one) | [...] |
+| repetition (none or more) | {...} |
+
+## EBNF
 
 ```EBNF
 Lpar = "(";
@@ -9,10 +26,10 @@ Rpar = ")";
 (* --- Integers --- *)
 
 Digit = "0" | "1" | "2" | "3" | "4" | "5" | "6" | "7" | "8" | "9";
-Int = Digit, {Digit};
+PositiveInt = Digit, {Digit};
 
 UnIntOp = "-";
-FinalInt = [UnIntOp], Int;
+FinalInt = [UnIntOp], PositiveInt;
 
 BinIntOp = "+" | "-" | "*" | "/";
 
@@ -53,7 +70,7 @@ GenericCompOp = "==" | "!=";
 OrderCompOp = ">" | "<" | ">=" | "=>";
 BinBoolOp = "&&" | "||";
 
-GenericOperand = FinalInt | String | FinalBool
+GenericOperand = FinalInt | String | FinalBool | array;
 
 (* Usual boolean expression with '&&' and '||' operators *)
 BoolExpr = FinalBool
@@ -76,23 +93,67 @@ BoolFinalExpr = BoolExpr
 
 (* --- Arrays --- *)
 
-content = BoolFinalExpr, {"," BoolFinalExpr}, [","]
-        | String, {"," String}, [","]
-        | IntExpr, {"," IntExpr}, [","]
-        | array, {"," array}, [","];  (* Seems quite difficult to express the fact that inner arrays should be of the exact same type *)
+BasicType = "i32" | "bool" | "String";
+Type = BasicType | "[", Type, ";", PositiveInt "]";
+
+content = BoolFinalExpr, {",", BoolFinalExpr}, [","]
+        | String, {",", String}, [","]
+        | IntExpr, {",", IntExpr}, [","]
+        | array, {",", array}, [","];  (* Seems quite difficult to express the fact that inner arrays should be of the exact same type *)
 
 array = "[", [content], "]";
 
-(* How to express the fact that we can get an int/bool/String expression from accessing the array of the correct type, but also at a correct index? *)
+(* How to properly express the fact that we can get an int/bool/String/array expression from accessing the array of the correct type, but also at a correct index? *)
+GenericOperand = array, "[", FinalInt, "]";
+
+
+
+(* --- Expressions --- *)
+
+ident_begin = letter | "_";
+ident_char = ident_begin | digit;
+Identifier = ident_begin, {ident_char};
+
+Block = "{", [{Statement, ";"}, Statement, [;]] "}";
+
+IfThenElse = "if ", BoolFinalExpr, Block, [{"else if", BoolFinalExpr, Block}, ["else", Block]];
+
+(* How to properly express the fact that we can get an int/bool/String/array expression from a function call, with correct parameters, but also with the correct return type? *)
+Call = Identifier, "(", [{content, ","}, content, [","]], ")";
+
+Expr = GenericOperand
+     | Identifier
+     | Call
+     | IfThenElse
+     | Block
+     | "(", Expr, ")";
+
+
+
+(* --- Statements --- *)
+
+Let = "let ", ["mut "], identifier, [":", Type], ["=", Expr];
+
+assign_left = Ident | assign_left, "[", FinalInt, "]";
+Assign = assign_left, "=", Expr;
+
+While = "while ", BoolFinalExpr, Block;
+
+parameter = identifier, ":", Type;
+parameters = [{parameter, ","}, parameter, [","]];
+Fn = "fn ", identifier, "(", parameters, ")", [" -> ", Type];
+
+Statement = Expr
+          | Let
+          | Assign
+          | While
+          | Fn;
+
+
+
+(* --- Program --- *)
+
+Main = "fn main() ", ["-> ()"], Block;
+Program = {Fn}, Main;
 
 ```
-
-While using the following syntax (from the [wikipedia page](https://en.wikipedia.org/wiki/Extended_Backus%E2%80%93Naur_form#Table_of_symbols)):
-| Usage   | Notation    |
-| ---    | ---   |
-| definition | = |
-| concatenation | , |
-| termination | ; |
-| alternation | \| |
-| optional (none or one) | [...] |
-| repetition (none or more) | {...} |
