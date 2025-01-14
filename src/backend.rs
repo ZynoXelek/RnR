@@ -23,6 +23,7 @@ use mips::{
 //?#                                                                                               #
 //?#################################################################################################
 
+//? OLD STACK FRAME - NOT UP TO DATE
 //* stack frame layout:
 // ... things before ...
 // 16[fp]    arg 1
@@ -33,34 +34,76 @@ use mips::{
 // -4[fp]    local 1
 // -8[fp]    local 2, etc.
 
-const DEFAULT_SCOPE_SIZE: u32 = 20;
+//? NEW STACK FRAME
+//* stack frame layout:
+// ... things before ...
+//  4[fp]    ra
+//  0[fp]    old_fp
+// -4[fp]    local 1
+// -8[fp]    local 2, etc.
+
+// This modification is made so that I can use any number of arguments in functions
+// Moreover, it reduces the size usage of the stack
+// This is possible because when I call a function, I always use an intermediate scope to store the arguments:
+
+// Example function call:
+// {
+//     let a = 3;
+//     let b = false;
+
+//     fn dummy(i: i32, b: bool) -> i32 {
+//         if b {
+//             return i;
+//         } else {
+//             return 0;
+//         }
+//     }
+
+//     dummy(a, b)
+// }
+
+// This will lead to the following scopes:
+// Scope 0: 'a', 'b' and 'dummy' are defined
+// Scope 1: local 'i' and 'b' are defined
+// Scope 3: function 'dummy' body is called and executed
+
+// -----------------------------------------------------------------------------------------------
+
+const DEFAULT_SCOPE_SIZE: u32 = 8; // Old had: 20;
 const DEBUG_PRINTS: bool = false;
 
 //? Helpers
 
 #[derive(Clone, Debug)]
 pub enum VarSize {
-    Single(usize), // Single value
-    Array(usize, Box<VarSize>), // Array of size u32 of objects of size VarSize
+    Single { // Single value
+        bytes_size :usize 
+    },
+    Array {  // Array of size nb_elements of objects of size VarSize
+        nb_elem :usize,
+        elem_size: Box<VarSize>
+    },
 }
 
 impl VarSize {
     pub fn default() -> Self {
-        VarSize::Single(4)
+        VarSize::Single { bytes_size: 4 }
     }
 
-    pub fn new(size: usize) -> Self {
-        VarSize::Single(size)
+    // Size should be given in bytes (it should be a multiple of 4)
+    pub fn new(bytes_size: usize) -> Self {
+        VarSize::Single { bytes_size }
     }
 
-    pub fn new_array(size: usize, inner: VarSize) -> Self {
-        VarSize::Array(size, Box::new(inner))
+    // Size should be given in number of elements ([1, 2] -> size = 2, not 8)
+    pub fn new_array(nb_elem: usize, elem_size: VarSize) -> Self {
+        VarSize::Array { nb_elem, elem_size: Box::new(elem_size) }
     }
 
-    pub fn get_size(&self) -> usize {
+    pub fn get_bytes_size(&self) -> usize {
         match self {
-            VarSize::Single(size) => *size,
-            VarSize::Array(size, inner) => size * inner.get_size(),
+            VarSize::Single { bytes_size } => *bytes_size,
+            VarSize::Array { nb_elem, elem_size } => nb_elem * elem_size.get_bytes_size(),
         }
     }
 }
@@ -68,8 +111,8 @@ impl VarSize {
 impl From<Type> for VarSize {
     fn from(t: Type) -> Self {
         match t {
-            Type::I32 => VarSize::Single(4),
-            Type::Bool => VarSize::Single(4),
+            Type::I32 => VarSize::default(),
+            Type::Bool => VarSize::default(),
             Type::Array(inner, size) => VarSize::new_array(size, VarSize::from(*inner)),
             _ => unimplemented!("Type '{}' not supported yet", t),
         }
@@ -87,8 +130,8 @@ impl Var {
         Self { offset, size }
     }
 
-    pub fn get_size(&self) -> usize {
-        self.size.get_size()
+    pub fn get_bytes_size(&self) -> usize {
+        self.size.get_bytes_size()
     }
 }
 
@@ -115,10 +158,10 @@ impl Scope {
     }
 
     // Used to define variables, not functions arguments
-    pub fn add_var(&mut self, name: String, size: VarSize) {
+    pub fn add_var(&mut self, name: String, size: &VarSize) {
         // The offset of the variable is given by the size of the scope, and the size of the var itself
-        let offset = -(self.size as i32 - (size.get_size() - 4) as i32); // To get back to the first element of the variable
-        let new_var = Var::new(offset, size);
+        let offset = -(self.size as i32 - (size.get_bytes_size() - 4) as i32); // To get back to the first element of the variable
+        let new_var = Var::new(offset, size.clone());
         self.vars.insert(name, new_var);
     }
 
@@ -126,15 +169,20 @@ impl Scope {
         self.vars.get(name)
     }
 
+    pub fn update_size(&mut self, var_size: &VarSize) {
+        self.size += var_size.get_bytes_size() as u32;
+    }
+
     pub fn update_on_push(&mut self, var_size: VarSize) {
-        let var = Var::new(-(self.size as i32) - 4, var_size);
-        self.size += var.get_size() as u32;
+        let offset = -(self.size as i32 - (var_size.get_bytes_size() - 4) as i32);
+        let var = Var::new(offset, var_size);
+        self.size += var.get_bytes_size() as u32;
         self.temps.push(var);
     }
 
     pub fn update_on_pop(&mut self) {
         let var = self.temps.pop().unwrap();
-        self.size -= var.get_size() as u32;
+        self.size -= var.get_bytes_size() as u32;
     }
 
     pub fn add_function(&mut self, name: String, offset: u32) {
@@ -338,9 +386,6 @@ impl BVM {
 
     //* stack frame layout:
     // ... things before ...
-    // 16[fp]    arg 1
-    // 12[fp]    arg 2
-    //  8[fp]    arg 3
     //  4[fp]    ra
     //  0[fp]    old_fp
     // -4[fp]    local 1
@@ -429,15 +474,12 @@ impl BVM {
         instrs
     }
 
-    fn define_var(&mut self, name: &String, size: VarSize) {
+    fn define_var(&mut self, name: &String, size: &VarSize) {
         self.var_env.last_mut().unwrap().add_var(name.clone(), size);
     }
 
     //* stack frame layout:
     // ... things before ...
-    // 16[fp]    arg 1
-    // 12[fp]    arg 2
-    //  8[fp]    arg 3
     //  4[fp]    ra
     //  0[fp]    old_fp
     // -4[fp]    local 1
@@ -863,9 +905,6 @@ impl BVM {
 
     //* stack frame layout on call:
     //
-    // 16[fp]    arg 1
-    // 12[fp]    arg 2
-    //  8[fp]    arg 3
     //  4[fp]    ra
     //  0[fp]    old_fp
     // -4[fp]    local 1
@@ -880,8 +919,8 @@ impl BVM {
         let mut call_len = self.get_add_scope_len(); // Add the new scope
         for arg in args.0.iter() {
             call_len += self.get_expr_len(arg.clone());
-            call_len += self.get_pop_len();
-            call_len += 1;
+            // // call_len += self.get_pop_len();
+            // // call_len += 1;
         }
         call_len += 1; // bal
         call_len += self.get_remove_scope_len(); // Remove the new scope
@@ -905,30 +944,31 @@ impl BVM {
         let mut func_instrs = Instrs::new();
 
         let nb_args = args.0.len();
-        if nb_args > 3 {
-            // We only support 3 arguments for now
-            panic!("Only 3 arguments are supported for now");
-        }
+        // // if nb_args > 3 {
+        // //     // We only support 3 arguments for now
+        // //     panic!("Only 3 arguments are supported for now");
+        // // }
 
         // prelude
         func_instrs.append(&mut self.add_scope()); // Add the new scope to define the function arguments
         for i in 0..nb_args {
             // Generate code for each argument
-            let arg_offset = 16 - i as i32 * 4;
+
             let arg_expr = args.0.get(i).unwrap().clone();
-            func_instrs.append(&mut self.process_expr(arg_expr)); // The value is now located on top of the stack
-            func_instrs.append(&mut self.pop(t0)); // Pop the value to t0
-            self.pc += 1;
-            func_instrs.push(
-                sw(t0, arg_offset as i16, fp).comment(
-                    // Store argument value from register t0 to the correct argument position in the stack
-                    format!(
-                        "FUNC_CALL '{}': Set the value of argument {} in the stack at relative position {} to value of t0",
-                        name, i, arg_offset
-                    )
-                    .as_str(),
-                ),
-            );
+            func_instrs.append(&mut self.process_expr(arg_expr)); // The value is now located on top of the stack (No need to be moved)
+            // // let arg_offset = 16 - i as i32 * 4;
+            // // func_instrs.append(&mut self.pop(t0)); // Pop the value to t0
+            // // self.pc += 1;
+            // // func_instrs.push(
+            // //     sw(t0, arg_offset as i16, fp).comment(
+            // //         // Store argument value from register t0 to the correct argument position in the stack
+            // //         format!(
+            // //             "FUNC_CALL '{}': Set the value of argument {} in the stack at relative position {} to value of t0",
+            // //             name, i, arg_offset
+            // //         )
+            // //         .as_str(),
+            // //     ),
+            // // );
         }
 
         // Function call
@@ -975,22 +1015,40 @@ impl BVM {
         // It only has the arguments of the function in it.
         // It knows every function from the previous scopes.
 
+        // Previously, it used the stack layout where we could only support 3 arguments.
+        // Now, parameters are directly stored as local variables from the previous scope
+
         let mut function_scopes: Vec<Scope> = self.var_env.clone();
 
         // Then, we remove every known variable from it because we won't need them (we are not even allowed to use them)
         for scope in function_scopes.iter_mut() {
             scope.vars.clear();
-            // Keep its size just in case we would go back to previous scopes but should not happen
+            // Keep its size just in case we would go back to previous scopes but should not happen (at least without references)
         }
 
         // Finally, we generate the correct variables for the function call
         let last_scope = function_scopes.last_mut().unwrap();
 
-        let nb_params = min(fd.parameters.0.len(), 3); // We only support 3 arguments for now
+        // // let nb_params = min(fd.parameters.0.len(), 3); // We only support 3 arguments for now
+        let nb_params = fd.parameters.0.len();
+        let mut param_offset = -4;
+
         for i in 0..nb_params {
-            let param_id = fd.parameters.0.get(i).unwrap().id.clone();
-            let param_var = Var::new(16 - i as i32 * 4, VarSize::default()); //TODO: add support for arrays as arguments
-            last_scope.vars.insert(param_id, param_var); // Each parameter is 4 bytes and starts at +16 and goes to +8
+            let param = fd.parameters.0.get(i).unwrap();
+            let param_id = param.id.clone();
+            let param_type = param.ty.clone();
+            let param_size = VarSize::from(param_type.clone());
+
+            let param_total_size = param_size.get_bytes_size() as i32;
+
+            // // let param_var = Var::new(16 - i as i32 * 4, VarSize::default()); 
+            // // last_scope.vars.insert(param_id, param_var); // Each parameter is 4 bytes and starts at +16 and goes to +8
+
+            last_scope.update_size(&param_size);
+            let param_var = Var::new(param_offset, param_size);
+            last_scope.vars.insert(param_id, param_var);
+
+            param_offset -= param_total_size;
         }
 
         function_scopes
@@ -1012,7 +1070,7 @@ impl BVM {
     }
 
     fn process_func_def(&mut self, fd: FnDeclaration) -> Instrs {
-        // A function shall take the values of its arguments from the frame layout at offsets 16, 12, and 8.
+        // A function shall take the values of its arguments as local variables from the previous scope    | BEFORE: from the frame layout at offsets 16, 12, and 8.
         // This manages the function body.
         let mut func_instrs = Instrs::new();
         let func_name = fd.id.clone();
@@ -1167,6 +1225,7 @@ impl BVM {
             }
             Expr::Ident(ident) => {
                 // Try to find the variable in a scope
+
                 let fp_offset = self.get_var_offset(&ident);
 
                 match fp_offset {
@@ -1304,7 +1363,7 @@ impl BVM {
                     stmt_instrs.append(&mut self.process_expr(expr)); // The value is now located on top of the stack
                 } else {
                     // If there is no expression, we just define the variable. It will be initialized to 0, or an array of 0 if it is an array
-                    let nb_zeros = size.get_size() as i32 / 4;
+                    let nb_zeros = size.get_bytes_size() as i32 / 4;
                     self.pc += nb_zeros;
                     for _ in 0..nb_zeros {
                         stmt_instrs.append(&mut self.push(zero)); // Push 0 to the stack
@@ -1312,7 +1371,7 @@ impl BVM {
                 }
 
                 // Now we define the variable in our environment
-                self.define_var(&name, size);
+                self.define_var(&name, &size);
             }
             Statement::Assign(left, right) => {
                 // We first process the expression to get the new value

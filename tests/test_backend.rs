@@ -1035,6 +1035,28 @@ mod test_bvm {
         }
 
         #[test]
+        fn test_simple_func_with_more_args() {
+            // Get the resulting mips
+            let mut mips = parse_mips_no_run::<Block>(
+                "
+            {
+                fn f(a: i32, b: i32, c: i32, d: i32, e: i32) -> i32 {
+                    a * (b + e - c) / d
+                }
+
+                f(2, 3, 4, 5, 6) // = 2 * (3 + 6 - 4) / 5 = 2 * 5 / 5 = 2
+            }
+            ",
+            )
+            .unwrap();
+
+            _ = mips.run();
+
+            // Check the result of the mips
+            assert_eq!(mips.rf.get(t0), 2);
+        }
+
+        #[test]
         fn test_simple_func_with_args_and_expr() {
             // Get the resulting mips
             let mut mips = parse_mips_no_run::<Block>(

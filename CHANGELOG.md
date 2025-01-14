@@ -93,6 +93,19 @@
 - Implement full AST optimization to remove useless parts of a given code. This first optimization stage does not replace identifiers with their values, but it removes any useless variable or function definition, and all their assignments. It also gets rid of useless operations on literals, useless blocks. It applies short-circuiting in some operations, and reduces it when it can.
 - Modify AST display to look nicer in case of inner blocks, and add support to display if-then-else_if.
 
+## 2025-01-13
+
+- Redesign arrays in the whole RnR so that it accepts expressions in initialization, and any depth in array.
+
+## 2025-01-14
+
+- Redesign backend function calls so that it can accept any number of arguments.
+
+## 2025-01-XX
+
+- Redesign backend variables so that it takes variable size into account, and it reduces the amount of pushes and pops, especially in function returns and expressions evaluation.
+- Implement arrays in the backend.
+
 ## TODO
 
 **Mandatory:**
