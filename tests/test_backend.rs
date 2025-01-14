@@ -1137,6 +1137,7 @@ mod test_bvm {
             let b = add(4, 5); // 9
             let c = a + b; // 14
             c;
+            println!(\"{}\", c); // Should be supported, simply ignored
         }
         ",
         )
@@ -1290,6 +1291,24 @@ mod test_bvm {
     }
 
     #[test]
+    fn test_complex_get_1() {
+        // Get the resulting mips
+        let mips = parse_mips::<Expr>("[[-1, 4], [2, 3]][0][1]").unwrap();
+
+        // Check the result of the mips
+        assert_eq!(mips.rf.get(t0), 4);
+    }
+
+    #[test]
+    fn test_complex_get_2() {
+        // Get the resulting mips
+        let mips = parse_mips::<Expr>("[[[true, true], [false, true]], [[false, false], [true, false]]][0][1][0]").unwrap();
+
+        // Check the result of the mips
+        assert_eq!(mips.rf.get(t0), 0);
+    }
+
+    #[test]
     fn test_let_array() {
         // Get the resulting mips
         let mips = parse_mips::<Block>(
@@ -1322,5 +1341,32 @@ mod test_bvm {
 
         // Check the result of the mips
         assert_eq!(mips.rf.get(t0), 6);
+    }
+
+    #[test]
+    fn test_array_with_func() {
+        // Get the resulting mips
+        let mips = parse_mips::<Block>(
+            "
+        {
+            fn new_arr() -> [[bool; 2]; 2] {
+                [[true, false], [false, true]]
+            }
+
+            fn bang_arr(a: [[bool; 2]; 2]) -> [[bool; 2]; 2] {
+                [[!a[0][0], !a[0][1]], [!a[1][0], !a[1][1]]]
+            }
+            
+            let mut a = new_arr(); // [[true, false], [false, true]]
+            a[0] = [false, false]; // [[false, false], [false, true]]
+            a = bang_arr(a); // [[true, true], [true, false]]
+            a[0][0] // true
+        }
+        ",
+        )
+        .unwrap();
+
+        // Check the result of the mips
+        assert_eq!(mips.rf.get(t0), 1);
     }
 }

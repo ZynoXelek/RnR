@@ -8,8 +8,7 @@ use crate::ast::{
 };
 
 use crate::common::*;
-use crate::error::Error;
-use mips::instr;
+use crate::error::Error; //TODO: Define proper custom errors
 use mips::{
     asm::*,
     instr::Instr,
@@ -20,7 +19,7 @@ use mips::{
 
 //?#################################################################################################
 //?#                                                                                               #
-//?#                                     Backend Scope Type                                        #
+//?#                                Backend Var and Scope Types                                    #
 //?#                                                                                               #
 //?#################################################################################################
 
@@ -37,41 +36,105 @@ use mips::{
 const DEFAULT_SCOPE_SIZE: u32 = 20;
 const DEBUG_PRINTS: bool = false;
 
+//? Helpers
+
 #[derive(Clone, Debug)]
-pub struct Scope {
-    size: u32,                       // Tracks the size of the scope on fp values (It only tracks the negative part of the stack)
-    vars: HashMap<String, i32>,      // Tracks the position of the variables on the stack (relative to fp): name -> position (-4, -8, ... or even 16, 12, ...)
-    functions: HashMap<String, u32>, // Tracks the position of the functions in the instructions memory
+pub enum VarSize {
+    Single(usize), // Single value
+    Array(usize, Box<VarSize>), // Array of size u32 of objects of size VarSize
 }
 
-//? Helpers
+impl VarSize {
+    pub fn default() -> Self {
+        VarSize::Single(4)
+    }
+
+    pub fn new(size: usize) -> Self {
+        VarSize::Single(size)
+    }
+
+    pub fn new_array(size: usize, inner: VarSize) -> Self {
+        VarSize::Array(size, Box::new(inner))
+    }
+
+    pub fn get_size(&self) -> usize {
+        match self {
+            VarSize::Single(size) => *size,
+            VarSize::Array(size, inner) => size * inner.get_size(),
+        }
+    }
+}
+
+impl From<Type> for VarSize {
+    fn from(t: Type) -> Self {
+        match t {
+            Type::I32 => VarSize::Single(4),
+            Type::Bool => VarSize::Single(4),
+            Type::Array(inner, size) => VarSize::new_array(size, VarSize::from(*inner)),
+            _ => unimplemented!("Type '{}' not supported yet", t),
+        }
+    }
+}
+
+#[derive(Clone, Debug)]
+pub struct Var {
+    offset: i32,     // Offset relative to the frame pointer (-4, -8, ... or even 16, 12, ...)
+    size: VarSize,   // Size of the variable
+}
+
+impl Var {
+    pub fn new(offset: i32, size: VarSize) -> Self {
+        Self { offset, size }
+    }
+
+    pub fn get_size(&self) -> usize {
+        self.size.get_size()
+    }
+}
+
+#[derive(Clone, Debug)]
+pub struct Scope {
+    functions: HashMap<String, u32>, // Tracks the position of the functions in the instructions memory
+
+    size: u32,                       // Tracks the size of the scope on fp values (It only tracks the negative part of the stack)
+    vars: HashMap<String, Var>,      // Tracks the position of the variables on the stack (relative to fp): name -> var struct
+    temps: Vec<Var>,                 // Tracks the temporary values on the stack //TODO: Implement this
+}
 
 impl Scope {
     // Vars will be stored on the stack.
     // Functions will be stocked in the instructions memory.
     pub fn new() -> Self {
         Self {
+            functions: HashMap::new(),
+
             size: 0, // Default size of the scope due to the frame layout
             vars: HashMap::new(),
-            functions: HashMap::new(),
+            temps: vec![],
         }
     }
 
     // Used to define variables, not functions arguments
-    pub fn add_var(&mut self, name: String) {
-        self.vars.insert(name, -(self.size as i32));
+    pub fn add_var(&mut self, name: String, size: VarSize) {
+        // The offset of the variable is given by the size of the scope, and the size of the var itself
+        let offset = -(self.size as i32 - (size.get_size() - 4) as i32); // To get back to the first element of the variable
+        let new_var = Var::new(offset, size);
+        self.vars.insert(name, new_var);
     }
 
-    pub fn get_var(&self, name: &String) -> Option<&i32> {
+    pub fn get_var(&self, name: &String) -> Option<&Var> {
         self.vars.get(name)
     }
 
-    pub fn update_on_push(&mut self) {
-        self.size += 4;
+    pub fn update_on_push(&mut self, var_size: VarSize) {
+        let var = Var::new(-(self.size as i32) - 4, var_size);
+        self.size += var.get_size() as u32;
+        self.temps.push(var);
     }
 
     pub fn update_on_pop(&mut self) {
-        self.size -= 4;
+        let var = self.temps.pop().unwrap();
+        self.size -= var.get_size() as u32;
     }
 
     pub fn add_function(&mut self, name: String, offset: u32) {
@@ -90,8 +153,8 @@ impl fmt::Display for Scope {
             "Scope: size={}\n| Vars:\n",
             self.size
         )?;
-        for (name, offset) in self.vars.iter() {
-            write!(f, "|\t- {}: {}\n", name, offset)?;
+        for (name, var) in self.vars.iter() {
+            write!(f, "|\t- {}: {}\n", name, var.offset)?;
         }
         write!(f, "| Functions:\n")?;
         for (name, offset) in self.functions.iter() {
@@ -223,6 +286,8 @@ pub struct BVM {
 }
 
 impl BVM {
+    // TODO: Accept intrinsics but ignore these lines
+    
     pub fn new() -> Self {
         let mut bvm = Self {
             var_env: vec![],
@@ -364,8 +429,8 @@ impl BVM {
         instrs
     }
 
-    fn define_var(&mut self, name: &String) {
-        self.var_env.last_mut().unwrap().add_var(name.clone());
+    fn define_var(&mut self, name: &String, size: VarSize) {
+        self.var_env.last_mut().unwrap().add_var(name.clone(), size);
     }
 
     //* stack frame layout:
@@ -387,8 +452,8 @@ impl BVM {
                 scope_offset += scope.size as i32; // Each variable is 4 bytes
             }
 
-            if let Some(offset) = scope.get_var(name) {
-                return Some(scope_offset + *offset);
+            if let Some(var) = scope.get_var(name) {
+                return Some(scope_offset + (*var).offset);
             }
             // It was not defined in this scope, so we add the +20 bytes of the scope which are located above fp[0]
             scope_offset += DEFAULT_SCOPE_SIZE as i32;
@@ -440,6 +505,7 @@ impl BVM {
         2 // 2 instructions
     }
 
+    // Push a register on the stack
     fn push(&mut self, reg: Reg) -> Instrs {
         let mut push_instrs = Instrs::new();
 
@@ -453,7 +519,9 @@ impl BVM {
             ));
 
         self.pc += 2;
-        self.var_env.last_mut().unwrap().update_on_push(); // Update the size of the scope
+
+        let var_size = VarSize::default(); //TODO: Support arrays
+        self.var_env.last_mut().unwrap().update_on_push(var_size); // Update the size of the scope
 
         push_instrs
     }
@@ -462,6 +530,7 @@ impl BVM {
         2 // 2 instructions
     }
 
+    // Pop the top of the stack into a register
     fn pop(&mut self, reg: Reg) -> Instrs {
         let mut pop_instrs = Instrs::new();
 
@@ -762,7 +831,22 @@ impl BVM {
                 // Do it in place
                 self.pc += 2;
             }
-            BinOp::Get => todo!(), //TODO: Add support for array operations
+            BinOp::Get => {
+                // To get the value of an array at a given index, we must think about the stack layout.
+                // If we try to do the following:
+                // a = [1, 2, 3]
+                // a[1]
+                //
+                // Then, the stack frame will be as follows: (supposing the scope is new)
+                // -4[fp]    1 // a[0]
+                // -8[fp]    2 // a[1]
+                // -12[fp]   3 // a[2]
+                // -16[fp]   3 // length of the array
+                // -20[fp]   1 // index
+                // Therefore, we know exactly where the value we are looking for is located in the stack.
+                //TODO: Add size data of each element to support arrays of arrays
+                todo!();
+            }
         }
 
         // At the end, we push the result back on the stack
@@ -787,6 +871,12 @@ impl BVM {
     // -4[fp]    local 1
     // -8[fp]    local 2, etc.
     fn get_call_len(&self, name: String, args: Arguments) -> u32 {
+
+        // Ignore intrinsics such as println!
+        if name.ends_with(&"!") {
+            return 0;
+        }
+
         let mut call_len = self.get_add_scope_len(); // Add the new scope
         for arg in args.0.iter() {
             call_len += self.get_expr_len(arg.clone());
@@ -806,6 +896,11 @@ impl BVM {
         // It shall initialize the new scope and put the correct values in the stack.
         // Then, it shall jump to the function definition.
         // Finally, it shall return the value of the function and remove the scope.
+
+        // Ignore intrinsics such as println!
+        if name.ends_with(&"!") {
+            return Instrs::new();
+        }
 
         let mut func_instrs = Instrs::new();
 
@@ -894,7 +989,8 @@ impl BVM {
         let nb_params = min(fd.parameters.0.len(), 3); // We only support 3 arguments for now
         for i in 0..nb_params {
             let param_id = fd.parameters.0.get(i).unwrap().id.clone();
-            last_scope.vars.insert(param_id, 16 - i as i32 * 4); // Each parameter is 4 bytes and starts at +16 and goes to +8
+            let param_var = Var::new(16 - i as i32 * 4, VarSize::default()); //TODO: add support for arrays as arguments
+            last_scope.vars.insert(param_id, param_var); // Each parameter is 4 bytes and starts at +16 and goes to +8
         }
 
         function_scopes
@@ -977,7 +1073,20 @@ impl BVM {
                         expr_len += 1; // Just an addi instruction
                         expr_len += self.get_push_len();
                     }
-                    _ => todo!(), //TODO: Add support for other literals
+                    // Literal::Array(content, size) => {
+                    //     // An array is a list of literals
+
+                    //     // The content of the array
+                    //     for c in content {
+                    //         let lit_expr = Expr::Lit(c);
+                    //         expr_len += self.get_expr_len(lit_expr);
+                    //     }
+                        
+                    //     // The size of the array
+                    //     expr_len += 1; // Just an addi instruction
+                    //     expr_len += self.get_push_len();
+                    // }
+                    _ => todo!(), //TODO: Add support for Strings?
                 }
             }
             Expr::Ident(_) => {
@@ -1036,7 +1145,24 @@ impl BVM {
                         );
                         expr_instrs.append(&mut self.push(t0));
                     }
-                    _ => todo!(), //TODO: Add support for other literals
+                    // Literal::Array(content, size) => {
+                    //     // An array is a list of literals
+
+                    //     // The content of the array
+                    //     for c in content {
+                    //         let lit_expr = Expr::Lit(c);
+                    //         expr_instrs.append(&mut self.process_expr(lit_expr));
+                    //     }
+
+                    //     // The size of the array
+                    //     self.pc += 1;
+                    //     expr_instrs.push(
+                    //         addi(t0, zero, size as i16)
+                    //             .comment(format!("Expr::Array: Load usize {} in t0", size).as_str()),
+                    //     );
+                    //     expr_instrs.append(&mut self.push(t0));
+                    // }
+                    _ => todo!(), //TODO: Add support for Strings?
                 }
             }
             Expr::Ident(ident) => {
@@ -1163,17 +1289,30 @@ impl BVM {
         let mut stmt_instrs = Instrs::new();
 
         match stmt {
-            Statement::Let(_, name, _, expr_opt) => {
+            Statement::Let(_, name, ty, expr_opt) => {
+                // The type of the variable will have been set by the type checker.
+                // If it is not, we cannot get the size of the variable, so we panic.
+                let size: VarSize = VarSize::default(); //TODO: Update this
+
+                // if let Some(ty) = ty {
+                //     size = VarSize::from(ty);
+                // } else {
+                //     panic!("Variable '{}' has no type", name);
+                // }
+
                 if let Some(expr) = expr_opt {
                     stmt_instrs.append(&mut self.process_expr(expr)); // The value is now located on top of the stack
                 } else {
-                    // If there is no expression, we just define the variable. It will be initialized to 0
-                    self.pc += 1;
-                    stmt_instrs.append(&mut self.push(zero)); // Push the 0 to the stack
+                    // If there is no expression, we just define the variable. It will be initialized to 0, or an array of 0 if it is an array
+                    let nb_zeros = size.get_size() as i32 / 4;
+                    self.pc += nb_zeros;
+                    for _ in 0..nb_zeros {
+                        stmt_instrs.append(&mut self.push(zero)); // Push 0 to the stack
+                    }
                 }
 
                 // Now we define the variable in our environment
-                self.define_var(&name);
+                self.define_var(&name, size);
             }
             Statement::Assign(left, right) => {
                 // We first process the expression to get the new value
