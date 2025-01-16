@@ -1148,21 +1148,11 @@ impl Parse for Prog {
         // A program is a list of function declarations
         // They are often separated by an empty line, but it is not present in the TokenStream whatsoever
 
-        //? Debug
-        // eprintln!("Parsing program");
-
         let mut fns: Vec<FnDeclaration> = Vec::new();
         while !input.is_empty() {
-            //? Debug
-            // eprintln!("Trying to parse a function from input:\n{}", input);
             let f: FnDeclaration = input.parse()?;
-            //? Debug
-            // eprintln!("Parsed function:\n{}", f);
             fns.push(f);
         }
-
-        //? Debug
-        // eprintln!("Parsed functions: {:?}", fns);
 
         Ok(Prog::new(fns))
     }

@@ -100,29 +100,34 @@
 ## 2025-01-14
 
 - Redesign backend function calls so that it can accept any number of arguments.
-- Improved type checker so that it returns the same program with type annotations where they were missing. This way, the backend will have all the required data to properly define each variable.
+- Improved type checker so that it returns the same program with type annotations where they were missing. This way, the backend will have all the required data to properly define each variable. (Blocks now have a type annotation for the backend to be able to predict their return type (and size))
 - Updated EBNF.md to describe how to write an entire syntactically valid program.
 
-## 2025-01-XX
+## 2025-01-15
 
 - Redesign backend variables so that it takes variable size into account, and it reduces the amount of pushes and pops, especially in function returns and expressions evaluation.
-- Implement arrays in the backend.
+- Implement arrays in the backend code generation.
+- Update CLI so that running the code through the VM is mandatory to generate the backend code (Allow for in-bonds index detection).
 
 ## TODO
 
 **Mandatory:**
 
-- Improve custom errors
-- Write SOS file
-- Write type rules
 - Write REFLECTION.md (including some additional feedback on how it went, when it was hard and everything... + What we have learnt)
-- UPDATE README
 - Export as a real `rnr` executable
+- UPDATE README
 
 **Optional:**
 
+1 - Primary
+
+- Improve custom errors
+- Write SOS file
+- Write type rules
+
+2 - Secondary
+
 - Backend optimizations
-- Implement arrays in backend
 - Implement references everywhere
 - Implement ownership?
 

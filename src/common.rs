@@ -1,4 +1,4 @@
-use mips::{instrs::Instrs, vm::Mips};
+use mips::{error::Error as MipsError, instrs::Instrs, vm::Mips};
 
 use crate::error::{Error, EvalError, TypeError};
 
@@ -52,9 +52,6 @@ where
         }
     }
 
-    //? Debug
-    // eprintln!("Token stream is:\n{}", ts);
-
     let res = syn::parse2::<T1>(ts);
     match res {
         Ok(r) => {
@@ -106,13 +103,26 @@ where
 
 pub fn parse_mips<T1>(s: &str) -> Result<Mips, Error>
 where
-    T1: syn::parse::Parse + std::fmt::Display + GetMips,
+    T1: syn::parse::Parse + std::fmt::Display + Clone + CheckType<T1> + GetMips,
 {
     let bl = parse::<T1>(s);
+
+    // Assert that it is valid code
+    let bl = match bl.check_type() {
+        Ok(b) => b,
+        Err(e) => return Err(format!("Type check failed: {}", e.to_string())),
+    };
+
     let mut mips = bl.get_mips()?;
 
     // Evaluate it
-    _ = mips.run();
+    match mips.run() {
+        Ok(_) => (),
+        Err(e) => match e {
+            MipsError::Halt => (),
+            _ => panic!("Unexpected running error: {:?}", e),
+        },
+    };
 
     Ok(mips)
 }
@@ -120,9 +130,16 @@ where
 // Useful to test the code generation without risking to run into an infinite loop
 pub fn parse_mips_no_run<T1>(s: &str) -> Result<Mips, Error>
 where
-    T1: syn::parse::Parse + std::fmt::Display + GetMips,
+    T1: syn::parse::Parse + std::fmt::Display + Clone + CheckType<T1> + GetMips,
 {
     let bl = parse::<T1>(s);
+
+    // Assert that it is valid code
+    let bl = match bl.check_type() {
+        Ok(b) => b,
+        Err(e) => return Err(format!("Type check failed: {}", e.to_string())),
+    };
+
     let mips = bl.get_mips()?;
 
     // Do not evaluate it yet

@@ -1,7 +1,38 @@
-use mips::rf::Reg::*;
+use mips::{error::Error, rf::Reg::*, vm::Mips};
 use rnr::ast::{Block, Expr, Prog};
 
 use rnr::common::{parse_mips, parse_mips_no_run};
+
+//? Helper function to get the return value of the resulting mips
+fn extract_return_value(mips: &Mips) -> u32 {
+    let mips_fp = mips.rf.get(fp);
+
+    let return_value_addr = mips_fp - 4;
+    let return_value = match mips.dm.read_word(return_value_addr) {
+        Ok(v) => v,
+        Err(_) => panic!("Mips does not have a return value"),
+    };
+
+    return_value
+}
+
+fn extract_return_array(mips: &Mips, arr_size: usize) -> Vec<u32> {
+    let mips_fp = mips.rf.get(fp);
+
+    let mut return_values: Vec<u32> = Vec::new();
+
+    for i in 0..arr_size {
+        let return_value_addr = mips_fp - 4 * (i as u32 + 1);
+        let return_value = match mips.dm.read_word(return_value_addr) {
+            Ok(v) => v,
+            Err(_) => panic!("Mips does not have a return value number {}", i + 1),
+        };
+
+        return_values.push(return_value);
+    }
+
+    return_values
+}
 
 #[cfg(test)]
 mod test_bvm {
@@ -460,19 +491,60 @@ mod test_bvm {
         use super::*;
 
         #[test]
+        fn test_empty_block() {
+            // This is to check that the size of a block is correctly determined
+            // Get the resulting mips
+            let mips = parse_mips::<Block>(
+                "
+            {
+
+            }
+            ",
+            )
+            .unwrap();
+
+            let mips_result = extract_return_value(&mips);
+
+            // By default, 0
+            assert_eq!(mips_result, 0);
+        }
+
+        #[test]
+        fn test_block_simple_return() {
+            // This is to check that the size of a block is correctly determined
+            // Get the resulting mips
+            let mips = parse_mips::<Block>(
+                "
+            {
+                7
+            }
+            ",
+            )
+            .unwrap();
+
+            let mips_result = extract_return_value(&mips);
+
+            // Check the result of the mips
+            assert_eq!(mips_result, 7);
+        }
+
+        #[test]
         fn test_simple_let() {
             // Get the resulting mips
             let mips = parse_mips::<Block>(
                 "
             {
                 let a: i32 = 2;
+                a
             }
             ",
             )
             .unwrap();
 
+            let mips_result = extract_return_value(&mips);
+
             // Check the result of the mips
-            assert_eq!(mips.rf.get(t0), 2);
+            assert_eq!(mips_result, 2);
         }
 
         #[test]
@@ -489,8 +561,10 @@ mod test_bvm {
             )
             .unwrap();
 
+            let mips_result = extract_return_value(&mips);
+
             // Check the result of the mips
-            assert_eq!(mips.rf.get(t0), 5); // Should also be put on top of the stack
+            assert_eq!(mips_result, 5);
         }
 
         #[test]
@@ -503,13 +577,16 @@ mod test_bvm {
                     let b: i32 = 2;
                     b + 1
                 };
+                a
             }
             ",
             )
             .unwrap();
 
+            let mips_result = extract_return_value(&mips);
+
             // Check the result of the mips
-            assert_eq!(mips.rf.get(t0), 3);
+            assert_eq!(mips_result, 3);
         }
 
         #[test]
@@ -520,15 +597,18 @@ mod test_bvm {
             {
                 let a: bool = {
                     let b: bool = true;
-                    b && false
+                    b || false
                 };
+                a
             }
             ",
             )
             .unwrap();
 
+            let mips_result = extract_return_value(&mips);
+
             // Check the result of the mips
-            assert_eq!(mips.rf.get(t0), 0);
+            assert_eq!(mips_result, 1);
         }
 
         #[test]
@@ -550,8 +630,10 @@ mod test_bvm {
             )
             .unwrap();
 
+            let mips_result = extract_return_value(&mips);
+
             // Check the result of the mips
-            assert_eq!(mips.rf.get(t0), 7);
+            assert_eq!(mips_result, 7);
         }
     }
 
@@ -577,8 +659,10 @@ mod test_bvm {
             )
             .unwrap();
 
+            let mips_result = extract_return_value(&mips);
+
             // Check the result of the mips
-            assert_eq!(mips.rf.get(t0), 4);
+            assert_eq!(mips_result, 4);
         }
 
         #[test]
@@ -597,8 +681,10 @@ mod test_bvm {
             )
             .unwrap();
 
+            let mips_result = extract_return_value(&mips);
+
             // Check the result of the mips
-            assert_eq!(mips.rf.get(t0), 5);
+            assert_eq!(mips_result, 5);
         }
 
         #[test]
@@ -619,8 +705,10 @@ mod test_bvm {
             )
             .unwrap();
 
+            let mips_result = extract_return_value(&mips);
+
             // Check the result of the mips
-            assert_eq!(mips.rf.get(t0), 6);
+            assert_eq!(mips_result, 6);
         }
     }
 
@@ -644,8 +732,10 @@ mod test_bvm {
             )
             .unwrap();
 
+            let mips_result = extract_return_value(&mips);
+
             // Check the result of the mips
-            assert_eq!(mips.rf.get(t0), 3);
+            assert_eq!(mips_result, 3);
         }
 
         #[test]
@@ -662,8 +752,10 @@ mod test_bvm {
             )
             .unwrap();
 
+            let mips_result = extract_return_value(&mips);
+
             // Check the result of the mips
-            assert_eq!(mips.rf.get(t0), 3);
+            assert_eq!(mips_result, 3);
         }
 
         #[test]
@@ -682,8 +774,10 @@ mod test_bvm {
             )
             .unwrap();
 
+            let mips_result = extract_return_value(&mips);
+
             // Check the result of the mips
-            assert_eq!(mips.rf.get(t0), 3);
+            assert_eq!(mips_result, 3);
         }
 
         #[test]
@@ -704,8 +798,10 @@ mod test_bvm {
             )
             .unwrap();
 
+            let mips_result = extract_return_value(&mips);
+
             // Check the result of the mips
-            assert_eq!(mips.rf.get(t0), 4);
+            assert_eq!(mips_result, 4);
         }
 
         #[test]
@@ -727,8 +823,10 @@ mod test_bvm {
             )
             .unwrap();
 
+            let mips_result = extract_return_value(&mips);
+
             // Check the result of the mips
-            assert_eq!(mips.rf.get(t0), 6);
+            assert_eq!(mips_result, 6);
         }
 
         #[test]
@@ -752,8 +850,10 @@ mod test_bvm {
             )
             .unwrap();
 
+            let mips_result = extract_return_value(&mips);
+
             // Check the result of the mips
-            assert_eq!(mips.rf.get(t0), 9);
+            assert_eq!(mips_result, 9);
         }
 
         #[test]
@@ -762,14 +862,14 @@ mod test_bvm {
             let mips = parse_mips::<Block>(
                 "
             {
-                let mut a: i32 = 1;
+                let mut a = 1;
                 if false {
                     a = 4;
-                    let b: i32 = a + 2; // 6
+                    let b = a + 2; // 6
                     b + 3 // 9
                 } else {
                     a = 6;
-                    let b: i32 = a + 2; // 8
+                    let b = a + 2; // 8
                     b + 3 // 11
                 }
             }
@@ -777,8 +877,10 @@ mod test_bvm {
             )
             .unwrap();
 
+            let mips_result = extract_return_value(&mips);
+
             // Check the result of the mips
-            assert_eq!(mips.rf.get(t0), 11);
+            assert_eq!(mips_result, 11);
         }
 
         // TODO: fix this
@@ -788,20 +890,22 @@ mod test_bvm {
             let mips = parse_mips::<Block>(
                 "
             {
-                let a: i32 = if false {
+                let a = if false {
                     4
                 } else {
                     5
                 };
-                let b: i32 = 2;
+                let b = 2;
                 a + b
             }
             ",
             )
             .unwrap();
 
+            let mips_result = extract_return_value(&mips);
+
             // Check the result of the mips
-            assert_eq!(mips.rf.get(t0), 7);
+            assert_eq!(mips_result, 7);
         }
     }
 
@@ -817,7 +921,7 @@ mod test_bvm {
             let mut mips = parse_mips_no_run::<Block>(
                 "
             {
-                let mut a: i32 = 0;
+                let mut a: i32 = 10;
                 while false {
                     a = a + 1;
                 }
@@ -827,10 +931,18 @@ mod test_bvm {
             )
             .unwrap();
 
-            _ = mips.run();
+            match mips.run() {
+                Ok(_) => (),
+                Err(e) => match e {
+                    Error::Halt => (),
+                    _ => panic!("Unexpected running error: {:?}", e),
+                },
+            };
+
+            let mips_result = extract_return_value(&mips);
 
             // Check the result of the mips
-            assert_eq!(mips.rf.get(t0), 0);
+            assert_eq!(mips_result, 10);
         }
 
         #[test]
@@ -849,10 +961,18 @@ mod test_bvm {
             )
             .unwrap();
 
-            _ = mips.run();
+            match mips.run() {
+                Ok(_) => (),
+                Err(e) => match e {
+                    Error::Halt => (),
+                    _ => panic!("Unexpected running error: {:?}", e),
+                },
+            };
+
+            let mips_result = extract_return_value(&mips);
 
             // Check the result of the mips
-            assert_eq!(mips.rf.get(t0), 4);
+            assert_eq!(mips_result, 4);
         }
 
         #[test]
@@ -861,8 +981,8 @@ mod test_bvm {
             let mut mips = parse_mips_no_run::<Block>(
                 "
             {
-                let mut a: i32 = 0;
-                while a > 0 {
+                let mut a: i32 = -1;
+                while a > 1 {
                     a = a - 1;
                 }
                 a
@@ -871,10 +991,18 @@ mod test_bvm {
             )
             .unwrap();
 
-            _ = mips.run();
+            match mips.run() {
+                Ok(_) => (),
+                Err(e) => match e {
+                    Error::Halt => (),
+                    _ => panic!("Unexpected running error: {:?}", e),
+                },
+            };
+
+            let mips_result = extract_return_value(&mips);
 
             // Check the result of the mips
-            assert_eq!(mips.rf.get(t0), 0);
+            assert_eq!(mips_result, (-1 as i32) as u32);
         }
 
         #[test]
@@ -893,10 +1021,18 @@ mod test_bvm {
             )
             .unwrap();
 
-            _ = mips.run();
+            match mips.run() {
+                Ok(_) => (),
+                Err(e) => match e {
+                    Error::Halt => (),
+                    _ => panic!("Unexpected running error: {:?}", e),
+                },
+            };
+
+            let mips_result = extract_return_value(&mips);
 
             // Check the result of the mips
-            assert_eq!(mips.rf.get(t0), (-11 as i32) as u32);
+            assert_eq!(mips_result, (-11 as i32) as u32);
         }
 
         #[test]
@@ -924,8 +1060,10 @@ mod test_bvm {
             )
             .unwrap();
 
+            let mips_result = extract_return_value(&mips);
+
             // Check the result of the mips
-            assert_eq!(mips.rf.get(t0), 17);
+            assert_eq!(mips_result, 17);
         }
     }
 
@@ -934,6 +1072,68 @@ mod test_bvm {
     #[cfg(test)]
     mod test_backend_functions {
         use super::*;
+
+        #[test]
+        fn test_empty_func() {
+            // To check sizes
+            // Get the resulting mips
+            let mut mips = parse_mips_no_run::<Block>(
+                "
+            {
+                fn foo() {
+                    
+                }
+
+                foo()
+            }
+            ",
+            )
+            .unwrap();
+
+            match mips.run() {
+                Ok(_) => (),
+                Err(e) => match e {
+                    Error::Halt => (),
+                    _ => panic!("Unexpected running error: {:?}", e),
+                },
+            };
+
+            let mips_result = extract_return_value(&mips);
+
+            // Check the result of the mips
+            assert_eq!(mips_result, 0); // By default, no return value
+        }
+
+        #[test]
+        fn test_simplest_func() {
+            // To check sizes
+            // Get the resulting mips
+            let mut mips = parse_mips_no_run::<Block>(
+                "
+            {
+                fn foo() -> i32 {
+                    3
+                }
+
+                foo()
+            }
+            ",
+            )
+            .unwrap();
+
+            match mips.run() {
+                Ok(_) => (),
+                Err(e) => match e {
+                    Error::Halt => (),
+                    _ => panic!("Unexpected running error: {:?}", e),
+                },
+            };
+
+            let mips_result = extract_return_value(&mips);
+
+            // Check the result of the mips
+            assert_eq!(mips_result, 3);
+        }
 
         #[test]
         fn test_simple_func_1() {
@@ -952,10 +1152,18 @@ mod test_bvm {
             )
             .unwrap();
 
-            _ = mips.run();
+            match mips.run() {
+                Ok(_) => (),
+                Err(e) => match e {
+                    Error::Halt => (),
+                    _ => panic!("Unexpected running error: {:?}", e),
+                },
+            };
+
+            let mips_result = extract_return_value(&mips);
 
             // Check the result of the mips
-            assert_eq!(mips.rf.get(t0), 4);
+            assert_eq!(mips_result, 4);
         }
 
         #[test]
@@ -973,16 +1181,24 @@ mod test_bvm {
                     3
                 }
 
-                a + foo()
+                a + foo() // 6
             }
             ",
             )
             .unwrap();
 
-            _ = mips.run();
+            match mips.run() {
+                Ok(_) => (),
+                Err(e) => match e {
+                    Error::Halt => (),
+                    _ => panic!("Unexpected running error: {:?}", e),
+                },
+            };
+
+            let mips_result = extract_return_value(&mips);
 
             // Check the result of the mips
-            assert_eq!(mips.rf.get(t0), 6);
+            assert_eq!(mips_result, 6);
         }
 
         #[test]
@@ -1006,10 +1222,18 @@ mod test_bvm {
             )
             .unwrap();
 
-            _ = mips.run();
+            match mips.run() {
+                Ok(_) => (),
+                Err(e) => match e {
+                    Error::Halt => (),
+                    _ => panic!("Unexpected running error: {:?}", e),
+                },
+            };
+
+            let mips_result = extract_return_value(&mips);
 
             // Check the result of the mips
-            assert_eq!(mips.rf.get(t0), 8);
+            assert_eq!(mips_result, 8);
         }
 
         #[test]
@@ -1028,10 +1252,18 @@ mod test_bvm {
             )
             .unwrap();
 
-            _ = mips.run();
+            match mips.run() {
+                Ok(_) => (),
+                Err(e) => match e {
+                    Error::Halt => (),
+                    _ => panic!("Unexpected running error: {:?}", e),
+                },
+            };
+
+            let mips_result = extract_return_value(&mips);
 
             // Check the result of the mips
-            assert_eq!(mips.rf.get(t0), 5);
+            assert_eq!(mips_result, 5);
         }
 
         #[test]
@@ -1050,10 +1282,18 @@ mod test_bvm {
             )
             .unwrap();
 
-            _ = mips.run();
+            match mips.run() {
+                Ok(_) => (),
+                Err(e) => match e {
+                    Error::Halt => (),
+                    _ => panic!("Unexpected running error: {:?}", e),
+                },
+            };
+
+            let mips_result = extract_return_value(&mips);
 
             // Check the result of the mips
-            assert_eq!(mips.rf.get(t0), 2);
+            assert_eq!(mips_result, 2);
         }
 
         #[test]
@@ -1073,10 +1313,18 @@ mod test_bvm {
             )
             .unwrap();
 
-            _ = mips.run();
+            match mips.run() {
+                Ok(_) => (),
+                Err(e) => match e {
+                    Error::Halt => (),
+                    _ => panic!("Unexpected running error: {:?}", e),
+                },
+            };
+
+            let mips_result = extract_return_value(&mips);
 
             // Check the result of the mips
-            assert_eq!(mips.rf.get(t0), 5);
+            assert_eq!(mips_result, 5);
         }
 
         #[test]
@@ -1097,10 +1345,18 @@ mod test_bvm {
             )
             .unwrap();
 
-            _ = mips.run();
+            match mips.run() {
+                Ok(_) => (),
+                Err(e) => match e {
+                    Error::Halt => (),
+                    _ => panic!("Unexpected running error: {:?}", e),
+                },
+            };
+
+            let mips_result = extract_return_value(&mips);
 
             // Check the result of the mips
-            assert_eq!(mips.rf.get(t0), 5);
+            assert_eq!(mips_result, 5);
         }
 
         #[test]
@@ -1123,10 +1379,18 @@ mod test_bvm {
             )
             .unwrap();
 
-            _ = mips.run();
+            match mips.run() {
+                Ok(_) => (),
+                Err(e) => match e {
+                    Error::Halt => (),
+                    _ => panic!("Unexpected running error: {:?}", e),
+                },
+            };
+
+            let mips_result = extract_return_value(&mips);
 
             // Check the result of the mips
-            assert_eq!(mips.rf.get(t0), 5);
+            assert_eq!(mips_result, 5);
         }
 
         #[test]
@@ -1151,10 +1415,18 @@ mod test_bvm {
             )
             .unwrap();
 
-            _ = mips.run();
+            match mips.run() {
+                Ok(_) => (),
+                Err(e) => match e {
+                    Error::Halt => (),
+                    _ => panic!("Unexpected running error: {:?}", e),
+                },
+            };
+
+            let mips_result = extract_return_value(&mips);
 
             // Check the result of the mips
-            assert_eq!(mips.rf.get(t0), 14);
+            assert_eq!(mips_result, 14);
         }
 
         #[test]
@@ -1177,10 +1449,18 @@ mod test_bvm {
             )
             .unwrap();
 
-            _ = mips.run();
+            match mips.run() {
+                Ok(_) => (),
+                Err(e) => match e {
+                    Error::Halt => (),
+                    _ => panic!("Unexpected running error: {:?}", e),
+                },
+            };
+
+            let mips_result = extract_return_value(&mips);
 
             // Check the result of the mips
-            assert_eq!(mips.rf.get(t0), 120);
+            assert_eq!(mips_result, 120);
         }
     }
 
@@ -1212,7 +1492,41 @@ mod test_bvm {
             // We cannot check the return value since main does not return any value
             // Therefore, we simply check that we do not run into an error
             // If we want to check a return value, please refer to the above block tests
-            _ = mips.run();
+            match mips.run() {
+                Ok(_) => (),
+                Err(e) => match e {
+                    Error::Halt => (),
+                    _ => panic!("Unexpected running error: {:?}", e),
+                },
+            };
+        }
+
+        #[test]
+        fn test_simplest_prog() {
+            // Get the resulting mips
+            let mut mips = parse_mips_no_run::<Prog>(
+                "
+            fn dummy() -> i32 {
+                1
+            }
+
+            fn main() {
+                let a = dummy();
+            }
+            ",
+            )
+            .unwrap();
+
+            // We cannot check the return value since main does not return any value
+            // Therefore, we simply check that we do not run into an error
+            // If we want to check a return value, please refer to the above block tests
+            match mips.run() {
+                Ok(_) => (),
+                Err(e) => match e {
+                    Error::Halt => (),
+                    _ => panic!("Unexpected running error: {:?}", e),
+                },
+            };
         }
 
         #[test]
@@ -1230,7 +1544,6 @@ mod test_bvm {
                 let c: i32 = a + b; // 14
                 c;
                 println!(\"{}\", c); // Should be supported, simply ignored
-                c // Invalid but to trick the return value and verify its value
             }
             ",
             )
@@ -1239,7 +1552,13 @@ mod test_bvm {
             // We cannot check the return value since main does not return any value
             // Therefore, we simply check that we do not run into an error
             // If we want to check a return value, please refer to the above block tests
-            _ = mips.run();
+            match mips.run() {
+                Ok(_) => (),
+                Err(e) => match e {
+                    Error::Halt => (),
+                    _ => panic!("Unexpected running error: {:?}", e),
+                },
+            };
         }
 
         #[test]
@@ -1263,7 +1582,13 @@ mod test_bvm {
             // We cannot check the return value since main does not return any value
             // Therefore, we simply check that we do not run into an error
             // If we want to check a return value, please refer to the above block tests
-            _ = mips.run();
+            match mips.run() {
+                Ok(_) => (),
+                Err(e) => match e {
+                    Error::Halt => (),
+                    _ => panic!("Unexpected running error: {:?}", e),
+                },
+            };
         }
 
         #[test]
@@ -1287,7 +1612,6 @@ mod test_bvm {
                 let a: i32 = add(2, 3); // 5
                 let b: i32 = fact(5); // 120
                 let c: i32 = b / a; // 24
-                c;
             }
             ",
             )
@@ -1296,7 +1620,13 @@ mod test_bvm {
             // We cannot check the return value since main does not return any value
             // Therefore, we simply check that we do not run into an error
             // If we want to check a return value, please refer to the above block tests
-            _ = mips.run();
+            match mips.run() {
+                Ok(_) => (),
+                Err(e) => match e {
+                    Error::Halt => (),
+                    _ => panic!("Unexpected running error: {:?}", e),
+                },
+            };
         }
 
         #[test]
@@ -1312,7 +1642,7 @@ mod test_bvm {
                 }
             }
 
-            fn is_odd(n: i32) -> i32 {
+            fn is_odd(n: i32) -> bool {
                 if n == 0 {
                     false
                 } else {
@@ -1323,7 +1653,7 @@ mod test_bvm {
             fn main() {
                 let a: bool = is_even(5); // false
                 let b: bool = is_odd(5); // true
-                a || b // true
+                a || b; // true
             }
             ",
             )
@@ -1332,7 +1662,13 @@ mod test_bvm {
             // We cannot check the return value since main does not return any value
             // Therefore, we simply check that we do not run into an error
             // If we want to check a return value, please refer to the above block tests
-            _ = mips.run();
+            match mips.run() {
+                Ok(_) => (),
+                Err(e) => match e {
+                    Error::Halt => (),
+                    _ => panic!("Unexpected running error: {:?}", e),
+                },
+            };
         }
 
         // Showing that the value is correct
@@ -1350,7 +1686,7 @@ mod test_bvm {
                         }
                     }
 
-                    fn is_odd(n: i32) -> i32 {
+                    fn is_odd(n: i32) -> bool {
                         if n == 0 {
                             false
                         } else {
@@ -1366,10 +1702,18 @@ mod test_bvm {
             )
             .unwrap();
 
-            _ = mips.run();
+            match mips.run() {
+                Ok(_) => (),
+                Err(e) => match e {
+                    Error::Halt => (),
+                    _ => panic!("Unexpected running error: {:?}", e),
+                },
+            };
+
+            let mips_result = extract_return_value(&mips);
 
             // Check the result of the mips
-            assert_eq!(mips.rf.get(t0), 1);
+            assert_eq!(mips_result, 1);
         }
     }
 
@@ -1380,81 +1724,187 @@ mod test_bvm {
         use super::*;
 
         #[test]
-        #[ignore = "Arrays not yet implemented"]
         fn test_simple_array_literal_1() {
             // Get the resulting mips
-            let mips = parse_mips::<Expr>("[1, 2, 3]").unwrap();
-
-            // Check the result of the mips
-            assert_eq!(mips.rf.get(t0), 3);
-        }
-
-        #[test]
-        #[ignore = "Arrays not yet implemented"]
-        fn test_simple_array_literal_2() {
-            // Get the resulting mips
-            let mips = parse_mips::<Expr>("[1, 2]").unwrap();
-
-            // Check the result of the mips
-            assert_eq!(mips.rf.get(t0), 2);
-        }
-
-        #[test]
-        #[ignore = "Arrays not yet implemented"]
-        fn test_simple_get_1() {
-            // Get the resulting mips
-            let mips = parse_mips::<Expr>("[1, 2, 3][0]").unwrap();
-
-            // Check the result of the mips
-            assert_eq!(mips.rf.get(t0), 1);
-        }
-
-        #[test]
-        #[ignore = "Arrays not yet implemented"]
-        fn test_simple_get_2() {
-            // Get the resulting mips
-            let mips = parse_mips::<Expr>("[1, 2, 3][1]").unwrap();
-
-            // Check the result of the mips
-            assert_eq!(mips.rf.get(t0), 2);
-        }
-
-        #[test]
-        #[ignore = "Arrays not yet implemented"]
-        fn test_simple_get_3() {
-            // Get the resulting mips
-            let mips = parse_mips::<Expr>("[1, 2, 3][2]").unwrap();
-
-            // Check the result of the mips
-            assert_eq!(mips.rf.get(t0), 3);
-        }
-
-        #[test]
-        #[ignore = "Arrays not yet implemented"]
-        fn test_complex_get_1() {
-            // Get the resulting mips
-            let mips = parse_mips::<Expr>("[[-1, 4], [2, 3]][0][1]").unwrap();
-
-            // Check the result of the mips
-            assert_eq!(mips.rf.get(t0), 4);
-        }
-
-        #[test]
-        #[ignore = "Arrays not yet implemented"]
-        fn test_complex_get_2() {
-            // Get the resulting mips
-            let mips = parse_mips::<Expr>(
-                "[[[true, true], [false, true]], [[false, false], [true, false]]][0][1][0]",
+            let mips = parse_mips::<Block>(
+                "
+                {
+                    [1, 2, 3]
+                }
+                ",
             )
             .unwrap();
 
+            let mips_result = extract_return_array(&mips, 3);
+
             // Check the result of the mips
-            assert_eq!(mips.rf.get(t0), 0);
+            assert_eq!(mips_result, vec![1, 2, 3]);
         }
 
         #[test]
-        #[ignore = "Arrays not yet implemented"]
-        fn test_let_array() {
+        fn test_simple_array_literal_2() {
+            // Get the resulting mips
+            let mips = parse_mips::<Block>(
+                "
+                {
+                    [1, 2]
+                }
+                ",
+            )
+            .unwrap();
+
+            let mips_result = extract_return_array(&mips, 2);
+
+            // Check the result of the mips
+            assert_eq!(mips_result, vec![1, 2]);
+        }
+
+        #[test]
+        fn test_complex_array_literal_1() {
+            // Get the resulting mips
+            let mips = parse_mips::<Block>(
+                "
+                {
+                    [[1, 2], [3, 4]]
+                }
+                ",
+            )
+            .unwrap();
+
+            let mips_result = extract_return_array(&mips, 4);
+
+            // Check the result of the mips
+            assert_eq!(mips_result, vec![1, 2, 3, 4]);
+        }
+
+        #[test]
+        fn test_complex_array_literal_2() {
+            // Get the resulting mips
+            let mips = parse_mips::<Block>(
+                "
+                {
+                    [[[1, 2], [3, 4]], [[5, 6], [7, 8]]]
+                }
+                ",
+            )
+            .unwrap();
+
+            let mips_result = extract_return_array(&mips, 8);
+
+            // Check the result of the mips
+            assert_eq!(mips_result, vec![1, 2, 3, 4, 5, 6, 7, 8]);
+        }
+
+        #[test]
+        fn test_simple_get_1() {
+            // Get the resulting mips
+            let mips = parse_mips::<Block>(
+                "
+                {
+                    [1, 2][0]
+                }
+                ",
+            )
+            .unwrap();
+
+            let mips_result = extract_return_value(&mips);
+
+            // Check the result of the mips
+            assert_eq!(mips_result, 1);
+        }
+
+        #[test]
+        fn test_simple_get_2() {
+            // Get the resulting mips
+            let mips = parse_mips::<Block>(
+                "
+                {
+                    [1, 2, 3][1]
+                }
+                ",
+            )
+            .unwrap();
+
+            let mips_result = extract_return_value(&mips);
+
+            // Check the result of the mips
+            assert_eq!(mips_result, 2);
+        }
+
+        #[test]
+        fn test_simple_get_3() {
+            // Get the resulting mips
+            let mips = parse_mips::<Block>(
+                "
+                {
+                    [1, 2, 3][2]
+                }
+                ",
+            )
+            .unwrap();
+
+            let mips_result = extract_return_value(&mips);
+
+            // Check the result of the mips
+            assert_eq!(mips_result, 3);
+        }
+
+        #[test]
+        fn test_complex_get_1() {
+            // Get the resulting mips
+            let mips = parse_mips::<Block>(
+                "
+                {
+                    [[-1, 4], [2, 3]][0][1]
+                }
+                ",
+            )
+            .unwrap();
+
+            let mips_result = extract_return_value(&mips);
+
+            // Check the result of the mips
+            assert_eq!(mips_result, 4);
+        }
+
+        #[test]
+        fn test_complex_get_2() {
+            // Get the resulting mips
+            let mips = parse_mips::<Block>(
+                "
+                {
+                    [[-1, 4], [2, 3]][1]
+                }
+                ",
+            )
+            .unwrap();
+
+            let mips_result = extract_return_array(&mips, 2);
+
+            // Check the result of the mips
+            assert_eq!(mips_result, vec![2, 3]);
+        }
+
+        #[test]
+        fn test_complex_get_3() {
+            // Get the resulting mips
+            let mips = parse_mips::<Block>(
+                "
+                {
+                    [[[true, true], [false, true]], [[false, false], [true, false]]][0][1][1]
+                }
+                ",
+            )
+            .unwrap();
+
+            let mips_result = extract_return_value(&mips);
+
+            // Check the result of the mips
+            assert_eq!(mips_result, 1);
+        }
+
+        #[test]
+        fn test_simple_let_array() {
             // Get the resulting mips
             let mips = parse_mips::<Block>(
                 "
@@ -1466,13 +1916,33 @@ mod test_bvm {
             )
             .unwrap();
 
+            let mips_result = extract_return_value(&mips);
+
             // Check the result of the mips
-            assert_eq!(mips.rf.get(t0), 2);
+            assert_eq!(mips_result, 2);
         }
 
         #[test]
-        #[ignore = "Arrays not yet implemented"]
-        fn test_mut_let_array() {
+        fn test_complex_let_array() {
+            // Get the resulting mips
+            let mips = parse_mips::<Block>(
+                "
+            {
+                let a = [[1, 2, 3], [4, 5, 6]];
+                a[1]
+            }
+            ",
+            )
+            .unwrap();
+
+            let mips_result = extract_return_array(&mips, 3);
+
+            // Check the result of the mips
+            assert_eq!(mips_result, vec![4, 5, 6]);
+        }
+
+        #[test]
+        fn test_simple_mut_let_array() {
             // Get the resulting mips
             let mips = parse_mips::<Block>(
                 "
@@ -1485,12 +1955,33 @@ mod test_bvm {
             )
             .unwrap();
 
+            let mips_result = extract_return_value(&mips);
+
             // Check the result of the mips
-            assert_eq!(mips.rf.get(t0), 6);
+            assert_eq!(mips_result, 6);
         }
 
         #[test]
-        #[ignore = "Arrays not yet implemented"]
+        fn test_complex_mut_let_array() {
+            // Get the resulting mips
+            let mips = parse_mips::<Block>(
+                "
+            {
+                let mut a = [[1, 2, 3], [4, 5, 6]];
+                a[1] = [7, 8, 9];
+                a[1][0] + a[1][1] + a[1][2] // 24
+            }
+            ",
+            )
+            .unwrap();
+
+            let mips_result = extract_return_value(&mips);
+
+            // Check the result of the mips
+            assert_eq!(mips_result, 24);
+        }
+
+        #[test]
         fn test_array_with_func() {
             // Get the resulting mips
             let mips = parse_mips::<Block>(
@@ -1513,8 +2004,74 @@ mod test_bvm {
             )
             .unwrap();
 
+            let mips_result = extract_return_value(&mips);
+
             // Check the result of the mips
-            assert_eq!(mips.rf.get(t0), 1);
+            assert_eq!(mips_result, 1);
+        }
+
+        #[test]
+        fn test_prog_with_arrays() {
+            // Get the resulting mips
+            let mut mips = parse_mips_no_run::<Prog>(
+                "
+                fn gen_arr(i: i32) -> [i32; 3] {
+                    [-i, 3 - i, i / 3]
+                }
+
+                fn mul_arr(a: [i32; 3], b: [i32; 3]) -> [i32; 3] {
+                    [a[0] * b[0], a[1] * b[1], a[2] * b[2]]
+                }
+
+                fn main() {
+                    let a = gen_arr(5);
+                    let b = gen_arr(3);
+                    let c = mul_arr(a, b);
+                    println!(\"{} {} {}\", c[0], c[1], c[2]);
+                }
+            ",
+            )
+            .unwrap();
+
+            // We cannot check the return value since main does not return any value
+            // Therefore, we simply check that we do not run into an error
+            // If we want to check a return value, please refer to the above block tests
+            match mips.run() {
+                Ok(_) => (),
+                Err(e) => match e {
+                    Error::Halt => (),
+                    _ => panic!("Unexpected running error: {:?}", e),
+                },
+            };
+        }
+
+        #[test]
+        fn test_verify_prog_with_arrays_final_value() {
+            // Get the resulting mips
+            let mips = parse_mips::<Block>(
+                "
+                {
+                    fn gen_arr(i: i32) -> [i32; 3] {
+                        [-i, 3 - i, i / 3]
+                    }
+
+                    fn mul_arr(a: [i32; 3], b: [i32; 3]) -> [i32; 3] {
+                        [a[0] * b[0], a[1] * b[1], a[2] * b[2]]
+                    }
+
+                    let a = gen_arr(5); // [-5, -2, 1]
+                    let b = gen_arr(3); // [-3, 0, 1]
+                    let c = mul_arr(a, b); // [15, 0, 1]
+                    c
+                }
+            ",
+            )
+            .unwrap();
+
+            let mips_result = extract_return_array(&mips, 3);
+
+            // Check the result of the mips
+            assert_eq!(mips_result, vec![15, 0, 1]);
         }
     }
 }

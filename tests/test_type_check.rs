@@ -595,6 +595,8 @@ mod test_tvm {
 
         #[cfg(test)]
         mod testing_returned_ast {
+            use rnr::common::CheckType;
+
             use super::*;
 
             #[test]
@@ -967,6 +969,108 @@ mod test_tvm {
                 );
 
                 assert_type_check(&res, expected);
+            }
+
+            #[test]
+            fn test_correct_block_return_type_1() {
+                let res: Block = parse(
+                    "
+                    {
+                        let a = 1;
+                        a
+                    }
+                    ",
+                );
+                let res = res.check_type().unwrap();
+
+                let mut expected: Block = parse(
+                    "
+                    {
+                        let a: i32 = 1;
+                        a
+                    }
+                    ",
+                );
+                expected.return_type = Some(Type::I32);
+
+                assert!(expected.fully_eq(&res));
+            }
+
+            #[test]
+            fn test_correct_block_return_type_2() {
+                let res: Block = parse(
+                    "
+                    {
+                        let a = 1;
+                        let b = 2;
+                        a + b
+                    }
+                    ",
+                );
+                let res = res.check_type().unwrap();
+
+                let mut expected: Block = parse(
+                    "
+                    {
+                        let a: i32 = 1;
+                        let b: i32 = 2;
+                        a + b
+                    }
+                    ",
+                );
+                expected.return_type = Some(Type::I32);
+
+                assert!(expected.fully_eq(&res));
+            }
+
+            #[test]
+            fn test_correct_block_return_type_3() {
+                let res: Block = parse(
+                    "
+                    {
+                        let a = \"Hey!\";
+                        a
+                    }
+                    ",
+                );
+                let res = res.check_type().unwrap();
+
+                let mut expected: Block = parse(
+                    "
+                    {
+                        let a: String = \"Hey!\";
+                        a
+                    }
+                    ",
+                );
+                expected.return_type = Some(Type::String);
+
+                assert!(expected.fully_eq(&res));
+            }
+
+            #[test]
+            fn test_correct_block_return_type_4() {
+                let res: Block = parse(
+                    "
+                    {
+                        let a = [true, false];
+                        a
+                    }
+                    ",
+                );
+                let res = res.check_type().unwrap();
+
+                let mut expected: Block = parse(
+                    "
+                    {
+                        let a: [bool; 2] = [true, false];
+                        a
+                    }
+                    ",
+                );
+                expected.return_type = Some(Type::Array(Box::new(Type::Bool), 2));
+
+                assert!(expected.fully_eq(&res));
             }
 
             #[test]

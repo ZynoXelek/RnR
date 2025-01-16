@@ -268,7 +268,7 @@ impl BinOp {
 
                         let idx = i as usize;
 
-                        if idx > arr_size {
+                        if idx >= arr_size {
                             return Err(EvalError::index_out_of_bounds(i, arr_size));
                         }
 
@@ -641,7 +641,7 @@ impl VM {
 
                                 let idx = i as usize;
 
-                                if idx > arr_size {
+                                if idx >= arr_size {
                                     return Err(EvalError::index_out_of_bounds(i, arr_size));
                                 }
 
@@ -757,34 +757,6 @@ impl VM {
                     self.set_array_value(&var_ident, idx_seq, val_to_assign)?;
                     Ok(Literal::Unit.into()) // Assign statement returns Unit
                 }
-
-                //TODO: Remove if unnecessary
-                // match lexpr {
-                //     Expr::Ident(ident) => {
-                //         let val = self.eval_expr(rexpr)?;
-
-                //         // Type checker will be in charge of verifying the types and the mutability of the variable
-                //         Ok(Val::from(self.set_var(ident, val)?)) // Returns the assigned value (for blocks)
-                //     }
-
-                //     // Expr::BinOp(BinOp::Get, left, right) => {
-                //     //     let left_expr = *(left.clone());
-                //     //     // Left val should be an array identifier
-                //     //     match left_expr {
-                //     //         Expr::Ident(ident) => {
-                //     //             let index = self.eval_expr(right)?.get_int()? as usize;
-
-                //     //             let val = self.eval_expr(rexpr)?;
-
-                //     //             // Type checker will be in charge of verifying the types and the mutability of the variable
-                //     //             // Returns a unit value (an array assignment do not return the assigned value in rust)
-                //     //             Ok(Val::from(self.modify_array_value(&ident, index, val)?))
-                //     //         }
-                //     //         _ => Err(EvalError::expected_identifier(lexpr.clone())),
-                //     //     }
-                //     // }
-                //     _ => Err(EvalError::assignment_error(lexpr.clone())),
-                // }
             }
             Statement::While(cond, block) => {
                 while self.eval_expr(cond).unwrap().get_bool().unwrap() {

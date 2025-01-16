@@ -170,6 +170,7 @@ Or
 ```
 
 This process requires that the type-check option is used.
+It also reveals array access errors by checking wether an index is within bonds or not. This is why this option is mandatory to generate the backend code, which does not implement these checks.
 
 #### Generate the assembler code
 
@@ -185,7 +186,7 @@ Or
 --code_gen
 ```
 
-This process requires that the optimization option is used.
+This process requires that the evaluating option (`-v`) is used.
 
 #### Dump the generated ASM
 
@@ -235,3 +236,4 @@ The Cli uses the **clap** crate to parse the input commands.
 The backend is emulated in a virtual machine which copies a subset of the behavior of the MIPS 3k processor. This crate can be found [here](https://vesuvio-git.neteq.ltu.se/pln/mips).
 
 > Note: The backend code does not support terminal printing. Therefore, `println!` calls can only be verified by evaluating the parsed AST in the RnR virtual machine (`-v`).
+> However it can use any of the other defined types and operations.

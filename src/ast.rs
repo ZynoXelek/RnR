@@ -5,8 +5,24 @@ pub enum Type {
     Bool,
     String,
     Array(Box<Type>, usize),
+    // Ref(Box<Type>),
+    // MutRef(Box<Type>),
     Unit,
 }
+//TODO: References
+// Things to not forget:
+// - Think about lifetimes -> scope can't return a value from an inner scope
+//                         -> On variable redefinition, a ref to the old one is still usable
+//                            (So the initial variable should still be remembered somewhere, but not accessible anymore
+//                             except from this reference)
+//          -> This means that I need to generate `Scopes` which store variables as HashMap<String, usize>
+//             which would store var_name -> scope_id to to be able to access the variable in the scope data
+//             and I would also need an HashMap<usize, Var> to store the actual variables.
+//             I can also store temporary ones there this way.
+//
+// This would be a good thing to be implemented at every step of the compiler, so that every part could be compatible with
+// the reference system.
+// May I implement a generic Scope object in 'common.rs'? Scope<T> system. That would be nice.
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct Array {
@@ -74,10 +90,12 @@ pub enum Statement {
     Fn(FnDeclaration),
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone)] // PartialEq is implemented manually
 pub struct Block {
     pub statements: Vec<Statement>,
     pub semi: bool,
+    // This will be set by the type checker so that the backend can know in advance the size of the return value
+    pub return_type: Option<Type>,
 }
 
 #[derive(Debug, Clone, PartialEq)]

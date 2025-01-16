@@ -908,23 +908,11 @@ impl DetailedStmtUsage {
         // When generating the left part, the identifier is considered used once because it is read in the expression
         // We should therefore revert a single use for the identifier
 
-        //? Debug
-        // eprintln!("~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~");
-        // eprintln!("Assignation of var: {:?}", var);
-        // eprintln!("Before process:");
-        // eprintln!("Left part: {:?}", left);
-        // eprintln!("Right part: {:?}", right);
-
         let mut new_left_detailed = left.detailed.clone();
         new_left_detailed.remove_assign_var_ident_use(&var);
 
         // Generate the new Left part
         let new_left = ExprUsage::new(new_left_detailed);
-
-        //? Debug
-        // eprintln!("After process:");
-        // eprintln!("Left part: {:?}", new_left);
-        // eprintln!("~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~");
 
         Self::Assign(var, new_left, right)
     }
@@ -1579,11 +1567,6 @@ impl Optimizer {
         // To optimize a function call, we optimize each argument and keep the same function call.
         // Then, we use the function call usage to get the final usage of this expression.
 
-        //? Debug
-        // eprintln!(" ------------------------- ");
-        // eprintln!("Optimizing call: {}", ident);
-        // eprintln!("With args:\n{}", args);
-
         let is_intrinsic = if ident.ends_with(&"!") { true } else { false };
 
         let mut args_opt = vec![];
@@ -1596,9 +1579,6 @@ impl Optimizer {
 
         let final_expr = Expr::Call(ident.clone(), Arguments(args_opt));
 
-        //? Debug
-        // eprintln!("Final expression is:\n{}", final_expr);
-
         // Adding the function call usage
         let final_use = if !is_intrinsic {
             let func_sid = self.get_func_sid(&ident).unwrap();
@@ -1609,10 +1589,6 @@ impl Optimizer {
             let call_use = SimpleExprUsage::new(); // They do not add any usage except for their arguments
             ExprUsage::new_call(intrinsic_sid, args_use, call_use)
         };
-
-        //? Debug
-        // eprintln!("Final usage is:\n{:?}", final_use);
-        // eprintln!(" ------------------------- ");
 
         Ok(OptExpr::new(final_expr, final_use))
     }
@@ -1868,23 +1844,13 @@ impl Optimizer {
                     None => (None, None),
                 };
 
-                // The variable is not defined here, but in the scope optimization code
-
-                //? Debug
-                // eprintln!("#########################");
-                // eprintln!("Let statement for var: {}", ident);
-                // eprintln!("Expression is: {}", expr_opt.clone().or(Some(Expr::Lit(Literal::Unit))).unwrap());
-                // eprintln!("Expression summary usage: {:?}", expr_use.clone().or(Some(ExprUsage::new_empty())).unwrap().summary);
+                // The variable is not defined here, but in the scope (block) optimization code
 
                 let var_sid = self.generate_sid(&ident);
                 let opt_stmt = Statement::Let(m, ident.clone(), ty, expr_opt);
                 let mut stmt_use = StmtUsage::new_let(var_sid, expr_use);
 
                 self.update_stmt_usage_booleans(&mut stmt_use);
-
-                //? Debug
-                // eprintln!("Statement summary usage: {:?}", stmt_use.summary);
-                // eprintln!("#########################");
 
                 Ok(OptStmt::new(opt_stmt, stmt_use))
             }
@@ -2018,24 +1984,6 @@ impl Optimizer {
             );
         }
 
-        //? Debug
-        // eprintln!(" = = = = = = = = = = = = = = = = = = = = = = ");
-        // eprintln!("Initial functions were:");
-        // for (fn_name, scope_fn) in functions.iter() {
-        //     eprintln!(" - {}:", fn_name);
-        //     eprintln!(" | uses: {}", scope_fn.get_uses());
-        //     eprintln!(" | decl: {}", scope_fn.get_fn_decl());
-        //     eprintln!(" | call usage: {:?}", scope_fn.get_call_usage());
-        // }
-        // eprintln!("\nWhile new functions are:");
-        // for (fn_name, scope_fn) in new_functions.iter() {
-        //     eprintln!(" - {}:", fn_name);
-        //     eprintln!(" | uses: {}", scope_fn.get_uses());
-        //     eprintln!(" | decl: {}", scope_fn.get_fn_decl());
-        //     eprintln!(" | call usage: {:?}", scope_fn.get_call_usage());
-        // }
-        // eprintln!(" = = = = = = = = = = = = = = = = = = = = = = ");
-
         if new_functions == functions {
             // We have reached the final optimization
             return functions;
@@ -2106,22 +2054,10 @@ impl Optimizer {
         let final_block = Block {
             statements: new_stmts,
             semi: block.semi,
+            return_type: block.return_type,
         };
 
-        //? Debug
-        // eprintln!("________________________________________________________");
-        // eprintln!("Block after removing assignments:");
-        // eprintln!("{}", final_block);
-        // eprintln!("New statements usage are:");
-        // for usage in new_stmts_usage.iter() {
-        //     eprintln!(" - {:?}", usage);
-        // }
-
         let final_block_usage = self.build_block_return_usage(new_stmts_usage, block_scope_id);
-
-        //? Debug
-        // eprintln!("\nBuilt final block usage:\n{:?}", final_block_usage);
-        // eprintln!("________________________________________________________");
 
         OptBlock::new(final_block, final_block_usage)
     }
@@ -2323,10 +2259,6 @@ impl Optimizer {
 
         let (stmt, used) = opt_stmt.as_tuple();
 
-        //? Debug
-        // eprintln!("Removing unnecessary var {:?} from stmt:\n{}", var_to_remove, opt_stmt.get_stmt());
-        // eprintln!("It has the following usage: {:?}", opt_stmt.get_usage());
-
         if !used.get_assigned_vars().contains(var_to_remove) {
             return opt_stmt.clone();
         } else {
@@ -2348,16 +2280,7 @@ impl Optimizer {
                                 _ => unreachable!("StmtUsage does not match the statement (Let)"),
                             };
 
-                            //? Debug
-                            // eprintln!(" \\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\ ");
-                            // eprintln!("opt_expr before is:\n{:?}", opt_expr);
-
                             let opt_expr = self.remove_assign_from_expr(&opt_expr, var_to_remove);
-
-                            //? Debug
-                            // eprintln!(" ------------> Expression in Let is:\n{}", opt_expr.get_expr());
-                            // eprintln!(" ------------> Expression Usage in Let is:\n{:?}", opt_expr.get_usage().summary);
-                            // eprintln!(" ------------> Detailed Expression Usage in Let is:\n{:?}", opt_expr.get_usage().detailed);
 
                             Some(opt_expr)
                         }
@@ -2480,10 +2403,6 @@ impl Optimizer {
         // Keep a copy of the scopes to go back to it in the recursive call
         let init_scopes = self.scopes.clone();
 
-        //? Debug
-        // eprintln!("Optimizing block redundant vars");
-        // eprintln!("Initial scopes:\n{}", self.pretty_string_scopes());
-
         // We proceed a first redundant removal
         let mut opt_statements: Vec<OptStmt> = vec![];
         let nb_stmts = init_statements.len();
@@ -2491,9 +2410,6 @@ impl Optimizer {
         for i in 0..nb_stmts {
             let opt_stmt = init_statements[i].clone();
             let (stmt, used) = opt_stmt.as_tuple();
-
-            //? Debug
-            // eprintln!("\n~~~\nApplying stmt uses of:\n{}\n{:?}", opt_stmt.get_stmt(), opt_stmt.get_usage());
 
             // Update the used variables and functions. (No need to compute it again)
             self.apply_stmt_usage(&used);
@@ -2504,10 +2420,6 @@ impl Optimizer {
             if let Statement::Let(_, ident, _, _) = stmt.clone() {
                 let current_scope = self.scopes.last().unwrap();
 
-                //? Debug
-                // eprintln!("--> Let statement is: {}", opt_stmt.get_stmt());
-                // eprintln!("--> Current scope is:\n{}", current_scope);
-
                 if let Some(uses) = current_scope.vars.get(&ident) {
                     if *uses == 0 {
                         // The previously defined variable is not of use.
@@ -2516,9 +2428,6 @@ impl Optimizer {
 
                         let sid = self.generate_sid(&ident);
                         let nb_opt_stmts = opt_statements.len();
-
-                        //? Debug
-                        // eprintln!("Removing unnecessary '{}' var in already pushed statements...", ident);
 
                         for (i, ostmt) in opt_statements.clone().iter().rev().enumerate() {
                             let (stmt, used) = ostmt.as_tuple();
@@ -2529,16 +2438,8 @@ impl Optimizer {
                                 // Be aware that it is not necessarily an assign statement, it can also be a
                                 // while statement, or a block expr or if-then-else expr
 
-                                //? Debug
-                                // eprintln!("Found statement containing the redundant var: {}", stmt);
-                                // eprintln!("Usage is:\n{:?}", used);
-
                                 let new_ostmt = self.remove_assign_from_stmt(&ostmt, &sid);
                                 let (new_stmt, new_used) = new_ostmt.as_tuple();
-
-                                //? Debug
-                                // eprintln!("New statement is now: {}", new_stmt);
-                                // eprintln!("And its new usage is:\n{:?}", new_used);
 
                                 if new_stmt.is_empty_statement() {
                                     // The statement should be removed
@@ -2567,21 +2468,6 @@ impl Optimizer {
 
             opt_statements.push(opt_stmt);
         }
-
-        //? Debug
-        // let initial_block = Block {
-        //     statements: init_statements.iter().map(|(stmt, _)| stmt.clone()).collect(),
-        //     semi: false, // we don't care
-        // };
-        // let resulting_block = Block {
-        //     statements: opt_statements.iter().map(|(stmt, _)| stmt.clone()).collect(),
-        //     semi: false, // we don't care
-        // };
-        // eprintln!("############################");
-        // eprintln!("Recursive call result ->");
-        // eprintln!("Initial block:\n{}", initial_block);
-        // eprintln!("Resulting block:\n{}", resulting_block);
-        // eprintln!("############################");
 
         // We shall compare it to the one that was given at first
         // If they are the same, we can stop the process
@@ -2686,11 +2572,6 @@ impl Optimizer {
             let statement_opt = self.optimize_statement(statement.clone(), last_stmt)?;
             let (stmt, usage) = statement_opt.as_tuple();
 
-            //? Debug
-            // eprintln!(" - - - - - - - - - - - - - - - - - - ");
-            // eprintln!("Optimized statement is: {}", stmt);
-            // eprintln!("Statement summary usage: {:?}", usage.summary);
-
             // Skip the statement if it is useless
             if stmt.is_empty_statement() {
                 continue;
@@ -2745,22 +2626,6 @@ impl Optimizer {
 
         let mut useless_vars = self.get_current_scope_useless_vars();
 
-        //? Debug
-        // eprintln!("############################");
-        // eprintln!("Block Optimization has reached final optimization step (variables removal)");
-        // eprintln!("Useless vars: {:?}", useless_vars);
-        // let _current_block = Block {
-        //     statements: opt_statements.iter().map(|opt_stmt| opt_stmt.get_stmt().clone()).collect(),
-        //     semi: block.semi,
-        // };
-        // eprintln!("Current block:\n{}", _current_block);
-        // eprintln!("Here are the summary of each remaining stmt usage from the block:");
-        // for opt_stmt in opt_statements.iter() {
-        //     let (_, used) = opt_stmt.as_tuple();
-        //     eprintln!("{:?}", used.summary);
-        // }
-        // eprintln!("############################");
-
         let mut _temp_i = 0;
         while !useless_vars.is_empty() {
             let mut new_opt_statements: Vec<OptStmt> = vec![];
@@ -2773,12 +2638,6 @@ impl Optimizer {
 
             for opt_stmt in opt_statements.iter().rev() {
                 let (stmt, used) = opt_stmt.as_tuple();
-
-                //? Debug
-                // eprintln!("         ----------          ");
-                // eprintln!("Processing opt statement:\n{}", stmt);
-                // eprintln!("Statement summary usage:\n{:?}", used.summary);
-                // eprintln!("Statement detailed usage:\n{:?}", used.detailed);
 
                 let mut replacing_opt_stmt = opt_stmt.clone();
                 let (_, mut replacing_used) = replacing_opt_stmt.as_tuple();
@@ -2836,14 +2695,6 @@ impl Optimizer {
 
                 // Check if the statement is not empty
                 if !replacing_opt_stmt.get_stmt().is_empty_statement() {
-                    //? Debug
-                    // eprintln!("         ########            ");
-                    // eprintln!("Initial opt statement was the following:\n{}", stmt);
-                    // eprintln!("Initial statement summary usage:\n{:?}", used.summary);
-
-                    // eprintln!("New opt statement is the following:\n{}", replacing_opt_stmt.get_stmt());
-                    // eprintln!("New statement summary usage:\n{:?}", replacing_used.summary);
-
                     new_opt_statements.push(replacing_opt_stmt);
                 }
             }
@@ -2865,23 +2716,6 @@ impl Optimizer {
         //? --- Function optimizations
 
         let mut useless_funcs = self.get_current_scope_useless_funcs();
-
-        //? Debug
-        // eprintln!("############################");
-        // eprintln!("Block optimization before functions removal");
-        // let _current_block = Block {
-        //     statements: opt_statements.iter().map(|opt_stmt| opt_stmt.get_stmt().clone()).collect(),
-        //     semi: block.semi,
-        // };
-        // eprintln!("Current block:\n{}", _current_block);
-        // eprintln!("Useless funcs: {:?}", useless_funcs);
-        // eprintln!("Current scopes:\n{}", self.pretty_string_scopes());
-        // eprintln!("Here are the summary of each remaining stmt usage from the block:");
-        // for opt_stmt in opt_statements.iter() {
-        //     let (_, used) = opt_stmt.as_tuple();
-        //     eprintln!("{:?}", used.summary);
-        // }
-        // eprintln!("############################");
 
         let mut _temp_i = 0;
         while !useless_funcs.is_empty() {
@@ -2929,19 +2763,11 @@ impl Optimizer {
         let opt_block = Block {
             statements: final_statements,
             semi: block.semi,
+            return_type: block.return_type,
         };
 
         // Building the final expr usage
         let final_usage = self.build_block_return_usage(stmt_usages, block_scope_id);
-
-        //? Debug
-        // eprintln!("############################");
-        // eprintln!("Block optimization finished!");
-        // eprintln!("---> Final block:\n{}", opt_block);
-        // eprintln!("---> Final scopes:\n{}", self.pretty_string_scopes());
-        // eprintln!("---> Final return usage:\n{:?}", final_usage.return_usage);
-        // eprintln!("---> Final detailed usage:\n{:?}", final_usage.stmts_usage);
-        // eprintln!("############################");
 
         // Remove the block scope
         self.remove_scope();
@@ -2981,16 +2807,11 @@ impl Optimizer {
         let equivalent_block = Block {
             statements: final_stmts,
             semi: false,
+            return_type: Some(Type::Unit),
         };
-
-        //? Debug
-        // eprintln!("Equivalent block is:\n{}\n", equivalent_block);
 
         // Now, we can optimize the built block
         let opt_block = self._optimize_block(equivalent_block)?;
-
-        //? Debug
-        // eprintln!("Optimized block is:\n{}\n", opt_block.get_block());
 
         // And then we should extract from it the remaining functions
         let mut main_func: Option<FnDeclaration> = None;

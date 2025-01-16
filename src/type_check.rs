@@ -982,8 +982,7 @@ impl TVM {
             Expr::Block(block) => {
                 let (block_type, new_block) = self.eval_type_block(block)?.as_tuple();
                 Ok(TyExpr::new(block_type, Expr::Block(new_block)))
-            }
-            // _ => unimplemented!("type eval not implemented for expression {:?}", expr),
+            } // _ => unimplemented!("type eval not implemented for expression {:?}", expr),
         }
     }
 
@@ -1336,7 +1335,8 @@ impl TVM {
         // Removing the scope from the stack
         self.remove_scope();
 
-        let final_block = Block::new(final_statements, block.semi);
+        let return_type = result_type.get_type().unwrap();
+        let final_block = Block::new_with_type(final_statements, block.semi, return_type);
 
         // Returning the result of the block
         Ok(TyBlock::new(result_type, final_block))
@@ -1386,21 +1386,6 @@ impl TVM {
                 // Here it means everything is fine because function has already been checked
                 let new_prog = Prog::new(new_functions);
                 return Ok(new_prog);
-
-                // TODO: Remove if unnecessary
-                // // Everything is fine
-                // let prog_type = self.eval_type_block(&decl.body).unwrap().get_type_val(); // It should therefore be of Unit Type
-                // let prog_type = prog_type.get_type();
-                // match prog_type {
-                //     Some(t) => {
-                //         if t == Type::Unit {
-                //             return Ok(TypeVal::Type(Type::Unit));
-                //         } else {
-                //             return Err(TypeError::main_with_invalid_type(t));
-                //         }
-                //     }
-                //     None => unreachable!("Main function returns an uninitialized type"),
-                // }
             }
         }
         Err(TypeError::main_not_found())

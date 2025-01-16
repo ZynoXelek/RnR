@@ -1,7 +1,6 @@
 use mips::{
     asm::*,
-    
-    instr::{self, Instr, Op, OpR, OpI},
+    instr::{self, Instr, Op, OpI, OpR},
     instrs::Instrs,
     rf::Reg::{self, *},
     vm::Mips,
@@ -15,7 +14,8 @@ use crate::error::Error; //TODO: Use custom error type
 //?#                                                                                               #
 //?#################################################################################################
 
-pub fn parse_mips_opr_instr(op_str: &str, rd: Reg, rs: Reg, rt: Reg) -> Result<Instr, Error> { //TODO: Use custom error type
+pub fn parse_mips_opr_instr(op_str: &str, rd: Reg, rs: Reg, rt: Reg) -> Result<Instr, Error> {
+    //TODO: Use custom error type
     // We simply need to read the string and try to match it to one of the defined OpR
     // OpR are the following:
     // Add,
@@ -40,11 +40,15 @@ pub fn parse_mips_opr_instr(op_str: &str, rd: Reg, rs: Reg, rt: Reg) -> Result<I
         "Slt" => Ok(slt(rd, rs, rt)),
         "Sltu" => Ok(sltu(rd, rs, rt)),
         "Jr" => Ok(jr(rs)),
-        _ => Err(format!("Invalid input: could not match '{}' as an OpR", op_str)),
+        _ => Err(format!(
+            "Invalid input: could not match '{}' as an OpR",
+            op_str
+        )),
     }
 }
 
-pub fn parse_mips_opi_instr(op_str: &str, rt: Reg, rs: Reg, imm: i16) -> Result<Instr, Error> { //TODO: Use custom error type
+pub fn parse_mips_opi_instr(op_str: &str, rt: Reg, rs: Reg, imm: i16) -> Result<Instr, Error> {
+    //TODO: Use custom error type
     // We simply need to read the string and try to match it to one of the defined OpI
     // OpI are the following:
     // Addi,
@@ -75,11 +79,15 @@ pub fn parse_mips_opi_instr(op_str: &str, rt: Reg, rs: Reg, imm: i16) -> Result<
         "Sw" => Ok(sw(rt, imm, rs)),
         "Slti" => Ok(slti(rs, rt, imm)), // There is an inversion here for some reason
         "Sltiu" => Ok(sltiu(rs, rt, imm)), // There is an inversion here for some reason
-        _ => Err(format!("Invalid input: could not match '{}' as an OpI", op_str)),
+        _ => Err(format!(
+            "Invalid input: could not match '{}' as an OpI",
+            op_str
+        )),
     }
 }
 
-fn parse_mips_reg(reg_str: &str) -> Result<Reg, Error> { //TODO: Use custom error type
+fn parse_mips_reg(reg_str: &str) -> Result<Reg, Error> {
+    //TODO: Use custom error type
     // We simply need to read the string and try to match it to one of the defined Reg
     // Reg are the following:
     // zero,
@@ -147,7 +155,10 @@ fn parse_mips_reg(reg_str: &str) -> Result<Reg, Error> { //TODO: Use custom erro
         "sp" => Ok(sp),
         "fp" => Ok(fp),
         "ra" => Ok(ra),
-        _ => Err(format!("Invalid input: could not match '{}' as a Reg", reg_str)),
+        _ => Err(format!(
+            "Invalid input: could not match '{}' as a Reg",
+            reg_str
+        )),
     }
 }
 
@@ -157,7 +168,8 @@ fn parse_mips_reg(reg_str: &str) -> Result<Reg, Error> { //TODO: Use custom erro
 //?#                                                                                               #
 //?#################################################################################################
 
-pub fn parse_instr(instr: &str) -> Result<Instr, Error> { //TODO: Use custom error type
+pub fn parse_instr(instr: &str) -> Result<Instr, Error> {
+    //TODO: Use custom error type
     // An instr always follows one of the following syntaxes:
     // <InstrName>                              // e.g. "Halt"
     // <InstrName> <Reg>                        // e.g. "Jr ra"
@@ -178,17 +190,18 @@ pub fn parse_instr(instr: &str) -> Result<Instr, Error> { //TODO: Use custom err
 
     let single_code_part = format!(r"(?P<op>{})", op_code);
     let double_code_part = format!(r"(?P<reg1>{})", register_code);
-    let quadruple_code_part = format!(r"(?P<reg2>{})\s*(?P<reg3>{})", register_integer_code, register_integer_code);
+    let quadruple_code_part = format!(
+        r"(?P<reg2>{})\s*(?P<reg3>{})",
+        register_integer_code, register_integer_code
+    );
 
-    let regex_code = format!(r"{}\s*{}?\s*({})?\s*", single_code_part, double_code_part, quadruple_code_part);
+    let regex_code = format!(
+        r"{}\s*{}?\s*({})?\s*",
+        single_code_part, double_code_part, quadruple_code_part
+    );
     let re = regex::Regex::new(&regex_code).unwrap();
 
     let capt = re.captures(&instr);
-
-    //? Debug
-    // eprintln!("Instr: {}", instr);
-    // eprintln!("Regex: {}", regex_code);
-    // eprintln!("Matches: {:?}", capt);
 
     // Processing the result
     match capt {
@@ -197,12 +210,6 @@ pub fn parse_instr(instr: &str) -> Result<Instr, Error> { //TODO: Use custom err
             let reg1 = capt.name("reg1").map(|m| m.as_str());
             let reg2 = capt.name("reg2").map(|m| m.as_str());
             let reg3 = capt.name("reg3").map(|m| m.as_str());
-
-            //? Debug
-            // eprintln!("Op: {}", op_name);
-            // eprintln!("Reg1: {:?}", reg1);
-            // eprintln!("Reg2: {:?}", reg2);
-            // eprintln!("Reg3: {:?}", reg3);
 
             // First check if the op is a 'Halt'
             if op_name == "Halt" {
@@ -231,7 +238,9 @@ pub fn parse_instr(instr: &str) -> Result<Instr, Error> { //TODO: Use custom err
                     }
                     // If both are integers, we have an error
                     if int_re.is_match(reg3) && int_re.is_match(reg2) {
-                        return Err("Invalid instruction. Both Reg2 and Reg3 are integers".to_string());
+                        return Err(
+                            "Invalid instruction. Both Reg2 and Reg3 are integers".to_string()
+                        );
                     }
 
                     if is_opi {
@@ -247,14 +256,17 @@ pub fn parse_instr(instr: &str) -> Result<Instr, Error> { //TODO: Use custom err
                     } else {
                         let reg2 = parse_mips_reg(reg2)?;
                         let reg3 = parse_mips_reg(reg3)?;
-                        
+
                         parse_mips_opr_instr(op_name, reg1, reg2, reg3)
                     }
                 } else {
                     return Err("Invalid instruction. Not an 'Halt' nor 'Jr' instruction but only one register was given".to_string());
                 }
             } else {
-                return Err("Invalid instruction. Not an 'Halt' instruction but no registers given".to_string());
+                return Err(
+                    "Invalid instruction. Not an 'Halt' instruction but no registers given"
+                        .to_string(),
+                );
             }
         }
         None => {

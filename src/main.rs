@@ -87,7 +87,7 @@ struct Args {
     #[arg(
         short = 'c',
         long = "code_gen",
-        help = "Generate the backend ASM code (requires code optimization)"
+        help = "Generate the backend ASM code (requires virtual machine execution)"
     )]
     code_gen: bool,
 
@@ -151,7 +151,7 @@ fn parse_prog_from_file(path: &str) -> Result<Prog, io::Error> {
             Ok(prog)
         }
         Err(e) => {
-            eprintln!(" * File parsing: {}error {}{}", RED_COLOR, e, DEFAULT_COLOR);
+            eprintln!(" * File parsing: {}{}{}", RED_COLOR, e, DEFAULT_COLOR);
             Err(e)
         }
     }
@@ -175,7 +175,7 @@ fn ast_subcommand(prog: Prog, path: &str) -> io::Result<()> {
             Ok(())
         }
         Err(e) => {
-            eprintln!(" * AST dump: {}error {}{}", RED_COLOR, e, DEFAULT_COLOR);
+            eprintln!(" * AST dump: {}{}{}", RED_COLOR, e, DEFAULT_COLOR);
             Err(e)
         }
     }
@@ -194,7 +194,7 @@ fn type_check_subcommand(prog: Prog) -> Result<Prog, TypeError> {
             Ok(prog)
         }
         Err(e) => {
-            eprintln!(" * Type check: {}error {}{}", RED_COLOR, e, DEFAULT_COLOR);
+            eprintln!(" * Type check: {}{}{}", RED_COLOR, e, DEFAULT_COLOR);
             Err(e)
         }
     }
@@ -214,7 +214,7 @@ fn optimize_subcommand(prog: Prog) -> Result<Prog, Error> {
             Ok(opt_prog)
         }
         Err(e) => {
-            eprintln!(" * Optimization: {}error {}{}", RED_COLOR, e, DEFAULT_COLOR);
+            eprintln!(" * Optimization: {}{}{}", RED_COLOR, e, DEFAULT_COLOR);
             Err(e)
         }
     }
@@ -235,10 +235,7 @@ fn vm_subcommand(prog: Prog) -> Result<(), EvalError> {
             Ok(())
         }
         Err(e) => {
-            eprintln!(
-                " * VM evaluation: {}error {}{}",
-                RED_COLOR, e, DEFAULT_COLOR
-            );
+            eprintln!(" * VM evaluation: {}{}{}", RED_COLOR, e, DEFAULT_COLOR);
             Err(e)
         }
     }
@@ -261,10 +258,7 @@ fn code_gen_subcommand(prog: Prog) -> Result<Instrs, Error> {
             Ok(instrs)
         }
         Err(e) => {
-            eprintln!(
-                " * Code generation: {}error {}{}",
-                RED_COLOR, e, DEFAULT_COLOR
-            );
+            eprintln!(" * Code generation: {}{}{}", RED_COLOR, e, DEFAULT_COLOR);
             Err(e)
         }
     }
@@ -285,7 +279,7 @@ fn asm_subcommand(instrs: Instrs, path: &str) -> io::Result<()> {
             Ok(())
         }
         Err(e) => {
-            eprintln!(" * ASM dump: {}error {}{}", RED_COLOR, e, DEFAULT_COLOR);
+            eprintln!(" * ASM dump: {}{}{}", RED_COLOR, e, DEFAULT_COLOR);
             Err(e)
         }
     }
@@ -303,10 +297,7 @@ fn run_subcommand(mips: &mut Mips) -> Result<(), MipsError> {
             Ok(())
         }
         Err(e) => {
-            eprintln!(
-                " * Running code: {}error {:?}{}",
-                RED_COLOR, e, DEFAULT_COLOR
-            );
+            eprintln!(" * Running code: {}{:?}{}", RED_COLOR, e, DEFAULT_COLOR);
             Err(e)
         }
     }
@@ -352,8 +343,6 @@ fn load_asm_from_file(path: &str) -> Result<Instrs, Error> {
 
 fn main() {
     let args = Args::parse();
-    //? Debug
-    // eprintln!("Parsed args: {:?}", args);
 
     //* If an asm path is provided, we do not need to check a program.
     //* --asm_input is only compatible with the --run flag, not with any other flag.
@@ -422,13 +411,6 @@ fn main() {
             println!("\n ----------------- ");
             prog = type_check_subcommand(prog.clone()).unwrap();
 
-            if args.code_gen && !args.optimize {
-                eprintln!(
-                    "{}Warning: Code generation requested (-c) without code optimization (-o). Ignoring code generation.{}",
-                    YELLOW_COLOR, DEFAULT_COLOR
-                );
-            }
-
             // 3. Optimization
             if args.optimize {
                 println!("\n ----------------- ");
@@ -441,54 +423,70 @@ fn main() {
                     println!("\n ----------------- ");
                     ast_subcommand(prog.clone(), ast_path.path.as_str()).unwrap();
                 }
+
+                if args.code_gen && !args.virtual_machine {
+                    eprintln!(
+                        "{}Warning: Code generation requested (-c) without virtual machine execution (-v). Ignoring code generation.{}",
+                        YELLOW_COLOR, DEFAULT_COLOR
+                    );
+                }
             }
 
             // 4. Virtual machine
             if args.virtual_machine {
                 println!("\n ----------------- ");
-                vm_subcommand(prog.clone()).unwrap();
-            }
+                match vm_subcommand(prog.clone()) {
+                    Ok(_) => {}
+                    Err(_) => {
+                        eprintln!(
+                            "{}Error{}: VM execution failed, aborting final steps {}now{}.",
+                            RED_COLOR, DEFAULT_COLOR, RED_COLOR, DEFAULT_COLOR
+                        );
+                        return;
+                    }
+                };
 
-            // 5. Code generation
-            if args.optimize && args.code_gen {
-                //? Print a warning if an option that requires a missing previous step is used
-                if args.asm.is_some() && !args.code_gen {
-                    eprintln!(
-                        "{}Warning: ASM output requested (--asm) without code generation (-c). Ignoring ASM output.{}",
-                        YELLOW_COLOR, DEFAULT_COLOR
-                    );
-                }
+                // 5. Code generation
+                if args.optimize && args.code_gen {
+                    //? Print a warning if an option that requires a missing previous step is used
+                    if args.asm.is_some() && !args.code_gen {
+                        eprintln!(
+                            "{}Warning: ASM output requested (--asm) without code generation (-c). Ignoring ASM output.{}",
+                            YELLOW_COLOR, DEFAULT_COLOR
+                        );
+                    }
 
-                if args.run && !args.code_gen {
-                    eprintln!(
-                        "{}Warning: Run requested (-r) without code generation (-c). Ignoring run.{}",
-                        YELLOW_COLOR, DEFAULT_COLOR
-                    );
-                }
+                    if args.run && !args.code_gen {
+                        eprintln!(
+                            "{}Warning: Run requested (-r) without code generation (-c). Ignoring run.{}",
+                            YELLOW_COLOR, DEFAULT_COLOR
+                        );
+                    }
 
-                println!("\n ----------------- ");
-                let instrs = code_gen_subcommand(prog.clone());
-                if instrs.is_err() {
-                    eprintln!(
-                        "{}Error: Code generation failed. Skipping ASM and run steps.{}",
-                        RED_COLOR, DEFAULT_COLOR
-                    );
-                    return;
-                }
-                let instrs = instrs.unwrap();
-                println!("Generated code:\n{}", get_formatted_instrs(instrs.clone()));
-
-                // 6. ASM
-                if let Some(asm_path) = &args.asm {
                     println!("\n ----------------- ");
-                    _ = asm_subcommand(instrs.clone(), asm_path.path.as_str());
-                }
+                    let instrs = code_gen_subcommand(prog.clone());
+                    if instrs.is_err() {
+                        eprintln!(
+                            "{}Error: Code generation failed. Skipping ASM and run steps.{}",
+                            RED_COLOR, DEFAULT_COLOR
+                        );
+                        return;
+                    }
+                    let instrs = instrs.unwrap();
+                    println!("Generated code:\n{}", get_formatted_instrs(instrs.clone()));
 
-                // 7. Run
-                if args.run {
-                    println!("\n ----------------- ");
-                    let mut mips = Mips::new(instrs);
-                    _ = run_subcommand(&mut mips);
+                    // 6. ASM
+                    if let Some(asm_path) = &args.asm {
+                        println!("\n ----------------- ");
+                        _ = asm_subcommand(instrs.clone(), asm_path.path.as_str());
+                    }
+
+                    // 7. Run
+                    if args.run {
+                        println!("\n ----------------- ");
+                        let mut mips = Mips::new(instrs);
+                        _ = run_subcommand(&mut mips);
+                    }
                 }
             }
         }

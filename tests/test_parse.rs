@@ -1189,6 +1189,7 @@ mod test_parsing {
                 Block {
                     statements: vec![],
                     semi: false,
+                    return_type: None,
                 },
             );
             assert_eq!(stmt, expected);

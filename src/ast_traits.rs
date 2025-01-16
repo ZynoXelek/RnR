@@ -885,7 +885,19 @@ impl From<Statement> for Block {
 
 impl Block {
     pub fn new(statements: Vec<Statement>, semi: bool) -> Self {
-        Block { statements, semi }
+        Block {
+            statements,
+            semi,
+            return_type: None,
+        }
+    }
+
+    pub fn new_with_type(statements: Vec<Statement>, semi: bool, return_type: Type) -> Self {
+        Block {
+            statements,
+            semi,
+            return_type: Some(return_type),
+        }
     }
 
     pub fn get_empty_block() -> Block {
@@ -923,6 +935,13 @@ impl Block {
                 None => false,
             }
         }
+    }
+
+    // Made to verify that the type checker correctly affects return types to blocks
+    pub fn fully_eq(&self, other: &Block) -> bool {
+        self.statements == other.statements
+            && self.semi == other.semi
+            && self.return_type == other.return_type
     }
 
     fn get_string_repr(&self, indent: usize) -> String {
@@ -989,6 +1008,14 @@ impl Block {
 impl fmt::Display for Block {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "{}", self.get_string_repr(0))
+    }
+}
+
+impl PartialEq for Block {
+    fn eq(&self, other: &Self) -> bool {
+        // ignore the return type because otherwise type_checking tests are really difficult to do
+        // It will be verified twice using the Block.fully_eq() method
+        self.statements == other.statements && self.semi == other.semi
     }
 }
 

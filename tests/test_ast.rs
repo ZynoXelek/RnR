@@ -9,6 +9,24 @@ fn eval_basic_expr(e: Expr) -> Literal {
     result_literal
 }
 
+//? References in rust
+
+#[test]
+fn test_references_in_real_rust() {
+    let a = 1;
+    let b = &a;
+    println!("a={} and b={}", a, b);
+    let a = true;
+    let c = *b;
+    println!("a={} and b={} and c={}", a, b, c);
+
+    //? Invalid:
+    // let a = {
+    //     let b = 1;
+    //     &b
+    // };
+}
+
 //?#################################################################################################
 //?#                                                                                               #
 //?#                                          Expr Type                                            #
@@ -446,7 +464,7 @@ mod test_type {
 #[cfg(test)]
 mod initial_tests {
     use super::*;
-    
+
     #[test]
     fn display_simple_block() {
         let ts: proc_macro2::TokenStream = "
@@ -467,10 +485,10 @@ mod initial_tests {
         .unwrap();
         let e: Block = syn::parse2(ts).unwrap();
         println!("ast:\n{:?}", e);
-    
+
         println!("pretty:\n{}", e);
     }
-    
+
     #[test]
     fn display_simple_block_with_func() {
         let ts: proc_macro2::TokenStream = "
@@ -489,10 +507,10 @@ mod initial_tests {
         .unwrap();
         let e: Block = syn::parse2(ts).unwrap();
         println!("ast:\n{:?}", e);
-    
+
         println!("pretty:\n{}", e);
     }
-    
+
     #[test]
     fn display_if_then_else_1() {
         let ts: proc_macro2::TokenStream = "
@@ -512,10 +530,10 @@ mod initial_tests {
         .unwrap();
         let e: Block = syn::parse2(ts).unwrap();
         println!("ast:\n{:?}", e);
-    
+
         println!("pretty:\n{}", e);
     }
-    
+
     #[test]
     fn display_if_then_else_2() {
         let ts: proc_macro2::TokenStream = "
@@ -534,10 +552,10 @@ mod initial_tests {
         .unwrap();
         let e: Expr = syn::parse2(ts).unwrap();
         println!("ast:\n{:?}", e);
-    
+
         println!("pretty:\n{}", e);
     }
-    
+
     #[test]
     fn display_if_then_else_if_1() {
         let ts: proc_macro2::TokenStream = "
@@ -547,10 +565,10 @@ mod initial_tests {
         .unwrap();
         let e: Expr = syn::parse2(ts).unwrap();
         println!("ast:\n{:?}", e);
-    
+
         println!("pretty:\n{}", e);
     }
-    
+
     #[test]
     fn display_if_then_else_if_2() {
         let ts: proc_macro2::TokenStream = "
@@ -569,10 +587,10 @@ mod initial_tests {
         .unwrap();
         let e: Expr = syn::parse2(ts).unwrap();
         println!("ast:\n{:?}", e);
-    
+
         println!("pretty:\n{}", e);
     }
-    
+
     #[test]
     fn display_while() {
         let ts: proc_macro2::TokenStream = "
@@ -584,10 +602,10 @@ mod initial_tests {
         .unwrap();
         let e: Statement = syn::parse2(ts).unwrap();
         println!("ast:\n{:?}", e);
-    
+
         println!("pretty:\n{}", e);
     }
-    
+
     #[test]
     fn display_while_in_block() {
         let ts: proc_macro2::TokenStream = "
@@ -607,10 +625,10 @@ mod initial_tests {
         .unwrap();
         let e: Block = syn::parse2(ts).unwrap();
         println!("ast:\n{:?}", e);
-    
+
         println!("pretty:\n{}", e);
     }
-    
+
     #[test]
     fn display_expr() {
         println!("{}", Expr::Ident("a".to_string()));
@@ -624,24 +642,24 @@ mod initial_tests {
         println!("{}", e);
         assert_eq!(format!("{}", e), "a + 7");
     }
-    
+
     // As you see it becomes cumbersome to write tests
     // if you have to construct the Expr by hand.
     //
     // Instead we might use our parser
-    
+
     #[test]
     fn parse_display_expr() {
         let ts: proc_macro2::TokenStream = "a + 7".parse().unwrap();
         let e: Expr = syn::parse2(ts).unwrap();
         println!("e {}", e);
     }
-    
+
     // This one will fail (Display for `if` is not yet implemented).
     // Implement it as an optional assignment
     //
     // Hint: You need to implement Display for Statement and Block
-    
+
     #[test]
     fn parse_display_if() {
         let ts: proc_macro2::TokenStream = "if a > 5 {5}".parse().unwrap();

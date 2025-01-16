@@ -23,6 +23,7 @@ pub fn vm_println() -> (FnDeclaration, Intrinsic) {
             body: Block {
                 statements: vec![],
                 semi: false,
+                return_type: None,
             },
         },
         |lit_vec| {
