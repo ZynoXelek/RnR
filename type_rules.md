@@ -4,11 +4,16 @@ Optional, assignment, see slides Lecture 6 for further details.
 
 Hint: Use inline latex math for GitLab.
 
-## Types:
+## Types
 
-TODO: Add references
+Here are the basic typing rules for expressions
 
-```ebnf
+<!-- TODO: Add references -->
+
+<!-- setting the language to ebnf make some strange String recognition -->
+```text
+(* Defined Types *)
+
 Integer;
 Bool;
 String;
@@ -24,7 +29,7 @@ Array(Type);
 
 Integer, ("+" | "-" | "*" | "/"), Integer = Integer;
 Bool, ("&&" | "||"), Bool = Bool;
-Type, ("!=" | "=="), Type = Bool;
+Type, ("!=" | ==), Type = Bool;
 Integer, ("<=" | "<" | ">=" | ">"), Integer = Bool;
 String, ("<=" | "<" | ">=" | ">"), String = Bool;
 Array(Type), "[", Integer, "]" = Type;
@@ -35,3 +40,5 @@ Bool = "true" | "false";
 String = "'", {character}, "'";
 Array(Type) = ("[", {Type, ","}, "]") | ("[" Type, ";", Integer, "]");
 ```
+
+<!-- TODO: Complete -->

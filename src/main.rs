@@ -373,16 +373,6 @@ fn main() {
         }
         return;
     } else {
-        let mut prog = parse_prog_from_file(args.get_file_path()).unwrap();
-        println!("Parsed program:\n{}", prog);
-
-        // Process subcommands in order:
-        // 1. AST
-        if let Some(ast_path) = &args.ast {
-            println!("\n ----------------- ");
-            ast_subcommand(prog.clone(), ast_path.path.as_str()).unwrap();
-        }
-
         //? Print a warning if an option that requires a missing previous step is used
         //? To be able to optimize the program, run the virtual machine, or the code generation, we must have type checked the program first
         if args.optimize && !args.type_check {
@@ -406,6 +396,39 @@ fn main() {
             );
         }
 
+        if args.code_gen && !args.virtual_machine {
+            eprintln!(
+                "{}Warning: Code generation requested (-c) without virtual machine execution (-v). Ignoring code generation.{}",
+                YELLOW_COLOR, DEFAULT_COLOR
+            );
+        }
+        
+        if args.asm.is_some() && !args.code_gen {
+            eprintln!(
+                "{}Warning: ASM output requested (--asm) without code generation (-c). Ignoring ASM output.{}",
+                YELLOW_COLOR, DEFAULT_COLOR
+            );
+        }
+
+        if args.run && !args.code_gen {
+            eprintln!(
+                "{}Warning: Run requested (-r) without code generation (-c). Ignoring run.{}",
+                YELLOW_COLOR, DEFAULT_COLOR
+            );
+        }
+
+        //? Actual CLI logic
+
+        let mut prog = parse_prog_from_file(args.get_file_path()).unwrap();
+        println!("Parsed program:\n{}", prog);
+
+        // Process subcommands in order:
+        // 1. AST
+        if let Some(ast_path) = &args.ast {
+            println!("\n ----------------- ");
+            ast_subcommand(prog.clone(), ast_path.path.as_str()).unwrap();
+        }
+
         // 2. Type check
         if args.type_check {
             println!("\n ----------------- ");
@@ -423,13 +446,6 @@ fn main() {
                     println!("\n ----------------- ");
                     ast_subcommand(prog.clone(), ast_path.path.as_str()).unwrap();
                 }
-
-                if args.code_gen && !args.virtual_machine {
-                    eprintln!(
-                        "{}Warning: Code generation requested (-c) without virtual machine execution (-v). Ignoring code generation.{}",
-                        YELLOW_COLOR, DEFAULT_COLOR
-                    );
-                }
             }
 
             // 4. Virtual machine
@@ -446,22 +462,8 @@ fn main() {
                     }
                 };
 
-                // 5. Code generation
-                if args.optimize && args.code_gen {
-                    //? Print a warning if an option that requires a missing previous step is used
-                    if args.asm.is_some() && !args.code_gen {
-                        eprintln!(
-                            "{}Warning: ASM output requested (--asm) without code generation (-c). Ignoring ASM output.{}",
-                            YELLOW_COLOR, DEFAULT_COLOR
-                        );
-                    }
-
-                    if args.run && !args.code_gen {
-                        eprintln!(
-                            "{}Warning: Run requested (-r) without code generation (-c). Ignoring run.{}",
-                            YELLOW_COLOR, DEFAULT_COLOR
-                        );
-                    }
+                // 5. Code generation (we don't need the optimization to generate code, even if it is better to do so)
+                if args.code_gen {
 
                     println!("\n ----------------- ");
                     let instrs = code_gen_subcommand(prog.clone());

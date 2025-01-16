@@ -5,15 +5,45 @@ This project aims to implement a compiler able to manage a subset of the Rust la
 The compiler is implemented in Rust, and supports the basics of the Rust language.
 It uses the Mips crate from the teacher for the backend code generation.
 
+## Table of content
+
+<!-- TOC -->
+- [RnR: Rust in Rust](#rnr-rust-in-rust)
+  - [Table of content](#table-of-content)
+  - [Implemented Types](#implemented-types)
+  - [Implemented Operations](#implemented-operations)
+  - [Examples of valid code](#examples-of-valid-code)
+  - [How to use it](#how-to-use-it)
+    - [Information about the repository](#information-about-the-repository)
+      - [Building the release binary](#building-the-release-binary)
+      - [Not building the release binary](#not-building-the-release-binary)
+    - [Basic behavior](#basic-behavior)
+    - [Additional subcommands](#additional-subcommands)
+      - [Get help on commands](#get-help-on-commands)
+      - [Change the input file](#change-the-input-file)
+      - [Dump the generated AST](#dump-the-generated-ast)
+      - [Process type checking](#process-type-checking)
+      - [Optimize the input program](#optimize-the-input-program)
+      - [Evaluate the parsed program using the RnR VM](#evaluate-the-parsed-program-using-the-rnr-vm)
+      - [Generate the assembler code](#generate-the-assembler-code)
+      - [Dump the generated ASM](#dump-the-generated-asm)
+      - [Run the generated ASM](#run-the-generated-asm)
+    - [Recommended commands](#recommended-commands)
+  - [Some additional remarks on the project](#some-additional-remarks-on-the-project)
+    - [Parser](#parser)
+    - [CLI](#cli)
+    - [Backend](#backend)
+  - [Future implementations](#future-implementations)
+
 ## Implemented Types
 
 The implemented types are the following:
 
-- **unit**: the basic unit type
-- **i32**: basic integers
-- **bool**: booleans
-- **String**: to be able to print things in the terminal
-- **Arrays**: arrays can be defined using any of the existing types.
+- **unit**: the basic unit type -> `()`
+- **i32**: basic integers -> `1, 2, -3`
+- **bool**: booleans -> true, false
+- **String**: to be able to print things in the terminal -> `"Hello World!"`
+- **Arrays**: arrays can be defined using any of the existing types -> `[1, -2, 3 * 4]`
 <!-- - **References** (WIP) -->
 
 ## Implemented Operations
@@ -21,16 +51,16 @@ The implemented types are the following:
 The implemented operations are the following:
 
 - Unary Operators
-  - **!**: boolean negation
-  - **-**: integer negation
+  - **!**: boolean negation -> `!true`
+  - **-**: integer negation -> `-5`
   <!-- - **&**: reference (WIP)
   - **\***: pointer (WIP) -->
 - Binary Operators
-  - **+**, **-**, **\***, **/**: basic operations for integers only
-  - **&&**, **||**: basic operations for booleans only
-  - **<**, **<=**, **>=**, **>**: comparison operations for integers and Strings
-  - **==**, **!=**: comparison operations for any type
-  - **\[i\]**: get operation for arrays
+  - **+**, **-**, **\***, **/**: basic operations for integers only -> `3 * 4`
+  - **&&**, **||**: basic operations for booleans only -> `true || false`
+  - **<**, **<=**, **>=**, **>**: comparison operations for integers and Strings -> `"abc" < "bac"`
+  - **==**, **!=**: comparison operations for any type -> `3 * 4 == 13 - 1`
+  - **\[i\]**: get operation for arrays -> `[1, 2, 3][1]`
 
 ## Examples of valid code
 
@@ -56,7 +86,35 @@ fn main() {
 
 ## How to use it
 
+### Information about the repository
+
 The compiler can be used thanks to its **CLI** which uses the **clap** crate. It includes basic commands.
+
+To be able to use them, you have two options once you have cloned this repository.
+
+#### Building the release binary
+
+You can build the binary from the cloned repository by calling the following command:
+
+```bash
+cargo build --release
+```
+
+Once it is done, the `rnr` executable will be located at `./target/release/rnr`. You can then use it with the commands described below. For instance:
+
+```bash
+rnr -i <path_to_my_file> --type_check -ovcr
+```
+
+#### Not building the release binary
+
+You can also directly use cargo to use RnR. To do so, you will have to call `cargo run`. However, to be able to add options as described below, you will have to use `--` to tell the `cargo run` command that the following strings are not options, but should be passed to `main.rs`. If you don't, it will try to identify any option (`-t` for instance) as an option of the `cargo run` command. Here is an example:
+
+```bash
+cargo run -- -i <path_to_my_file> --type_check -ovcr
+```
+
+The first time you call it, it will build the whole project (not release version) and it will be quite long, but for future uses, it will be much quicker as it won't have to do it again.
 
 ### Basic behavior
 
@@ -78,11 +136,6 @@ You can have additional information using the following subcommand:
 
 ```bash
 -h
-```
-
-Or
-
-```bash
 --help
 ```
 
@@ -92,11 +145,6 @@ You can change the input file from `main.rs` to any other file by adding this su
 
 ```bash
 -i <relative_input_path>
-```
-
-Or
-
-```bash
 --input <relative_input_path>
 ```
 
@@ -106,11 +154,6 @@ You can dump the generated Abstract Syntax Tree from the parsed program in a fil
 
 ```bash
 -a <relative_output_path>
-```
-
-Or
-
-```bash
 --ast <relative_output_path>
 ```
 
@@ -122,11 +165,6 @@ You can process type checking on the parsed result by adding the following subco
 
 ```bash
 -t
-```
-
-Or
-
-```bash
 --type_check
 ```
 
@@ -138,11 +176,6 @@ You can process a program optimization on the parsed result by adding the follow
 
 ```bash
 -o
-```
-
-Or
-
-```bash
 --optimize
 ```
 
@@ -155,17 +188,7 @@ You can process the evaluation of the parsed program using the RnR Virtual Machi
 
 ```bash
 -v
-```
-
-Or
-
-```bash
 --vm
-```
-
-Or
-
-```bash
 --virtual_machine
 ```
 
@@ -178,11 +201,6 @@ You can generate the assembler code corresponding to the parsed program with the
 
 ```bash
 -c
-```
-
-Or
-
-```bash
 --code_gen
 ```
 
@@ -204,11 +222,6 @@ You can run the generated ASM from the parsed program by adding the following su
 
 ```bash
 -r
-```
-
-Or
-
-```bash
 --run
 ```
 
@@ -218,8 +231,17 @@ This process requires that the code generation option is used.
 
 The most useful commands are therefore the two following ones:
 
-- Reading a custom file, type checking it, optimizing it, and running it through the virtual machine: `rnr -i <path_to_my_file> -tov`
-- Reading a custom file, type checking it, optimizing it, generating the ASM code and running it: `rnr -i <path_to_my_file> -tovcr`
+- Reading a custom file, type checking it, optimizing it, and running it through the virtual machine:
+
+```bash
+rnr -i <path_to_my_file> -tov
+```
+
+- Reading a custom file, type checking it, optimizing it, generating the ASM code and running it:
+
+```bash
+rnr -i <path_to_my_file> -tovcr
+```
 
 ## Some additional remarks on the project
 
@@ -237,3 +259,12 @@ The backend is emulated in a virtual machine which copies a subset of the behavi
 
 > Note: The backend code does not support terminal printing. Therefore, `println!` calls can only be verified by evaluating the parsed AST in the RnR virtual machine (`-v`).
 > However it can use any of the other defined types and operations.
+
+## Future implementations
+
+RnR should still evolve in the future. There are several features from the original Rust language I would like to implement, such as:
+
+- References
+- New keywords (`return`, `break`, `continue`)
+- Custom structures
+- For loops and iterators

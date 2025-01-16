@@ -1733,24 +1733,38 @@ impl BVM {
                 self.pc += 1;
             }
             BinOp::Le => {
-                binop_instrs.push(beq(t0, t1, 2).comment("Begin BinOp::Le")); // If equal, jump two instructions
-                binop_instrs.push(slt(t0, t0, t1));
-                binop_instrs.push(b(1)); // Then we jump the next instruction
-                binop_instrs.push(addi(t0, zero, 1).comment("Finish BinOp::Le"));
-                // Here, the result if true
-                self.pc += 4;
+                // Lower or equal than is looking at greater or equal but from the right perspective
+                // ---> This is strictly lower than
+                binop_instrs.push(slt(t0, t1, t0).comment("Begin BinOp::Le")); // Less than (strictly)
+                                                                               // ---> This is the opposite
+                binop_instrs.push(xori(t0, t0, 1).comment("Finish BinOp::Le"));
+                // Do it in place
+                self.pc += 2;
+
+                // Not optimized (Thanks to Eliott I have seen this!)
+                // // binop_instrs.push(beq(t0, t1, 2).comment("Begin BinOp::Le")); // If equal, jump two instructions
+                // // binop_instrs.push(slt(t0, t0, t1));
+                // // binop_instrs.push(b(1)); // Then we jump the next instruction
+                // // binop_instrs.push(addi(t0, zero, 1).comment("Finish BinOp::Le"));
+                // // // Here, the result if true
+                // // self.pc += 4;
             }
             BinOp::Gt => {
-                // Greater than (strictly) is Not(less than or equal)
-                // ---> This is lower or equal
-                binop_instrs.push(beq(t0, t1, 2).comment("Begin BinOp::Gt")); // If equal, jump two instructions
-                binop_instrs.push(slt(t0, t0, t1));
-                binop_instrs.push(b(1)); // Then we jump the next instruction
-                binop_instrs.push(addi(t0, zero, 1)); // Here, the result if true
-                                                      // ---> This is the opposite
-                binop_instrs.push(xori(t0, t0, 1).comment("Finish BinOp::Gt"));
-                // Do it in place
-                self.pc += 5;
+                // This is looking Lt but from the right perspective
+                binop_instrs.push(slt(t0, t1, t0).comment("Begin BinOp::Gt")); // Less than (strictly)
+                self.pc += 1;
+
+                // Not optimized (Thanks to Eliott I have seen this!)
+                // // // Greater than (strictly) is Not(less than or equal)
+                // // // ---> This is lower or equal
+                // // binop_instrs.push(beq(t0, t1, 2).comment("Begin BinOp::Gt")); // If equal, jump two instructions
+                // // binop_instrs.push(slt(t0, t0, t1));
+                // // binop_instrs.push(b(1)); // Then we jump the next instruction
+                // // binop_instrs.push(addi(t0, zero, 1)); // Here, the result if true
+                // //                                       // ---> This is the opposite
+                // // binop_instrs.push(xori(t0, t0, 1).comment("Finish BinOp::Gt"));
+                // // // Do it in place
+                // // self.pc += 5;
             }
             BinOp::Ge => {
                 // Greater or equal than is Not(strictly less)

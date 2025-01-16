@@ -1804,7 +1804,7 @@ pub mod test_optimize {
                     1 + 3; // Should be optimized out
                     b = a + 4;
 
-                    println!(\"{}\", b); // b is used thanks to this
+                    println!(\"{}\", b);
                 }
                 ",
             );
@@ -1837,7 +1837,7 @@ pub mod test_optimize {
                         a + 3
                     };
 
-                    println!(\"{}\", b); // b is used thanks to this
+                    println!(\"{}\", b);
                 }
                 ",
             );

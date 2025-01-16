@@ -101,7 +101,7 @@
 
 - Redesign backend function calls so that it can accept any number of arguments.
 - Improved type checker so that it returns the same program with type annotations where they were missing. This way, the backend will have all the required data to properly define each variable. (Blocks now have a type annotation for the backend to be able to predict their return type (and size))
-- Updated EBNF.md to describe how to write an entire syntactically valid program.
+- Updated EBNF.md to describe how to write an entire syntactically valid program. (I have used recursive writing, inspired by Adrian's work when I have reviewed it)
 
 ## 2025-01-15
 
@@ -109,31 +109,29 @@
 - Implement arrays in the backend code generation.
 - Update CLI so that running the code through the VM is mandatory to generate the backend code (Allow for in-bonds index detection).
 
+## 2025-01-16
+
+- Optimize the `Gt` and `Le` binary operations. I realized they could be optimized thanks to Eliott.
+- Write `REFLECTION.md`
+- Update `README.md`
+
 ## TODO
 
-**Mandatory:**
-
-- Write REFLECTION.md (including some additional feedback on how it went, when it was hard and everything... + What we have learnt)
-- Export as a real `rnr` executable
-- UPDATE README
-
-**Optional:**
-
-1 - Primary
+### 1 - Primary
 
 - Improve custom errors
 - Write SOS file
-- Write type rules
+- Improve type rules
 
-2 - Secondary
+### 2 - Secondary
 
 - Backend optimizations
 - Implement references everywhere
 - Implement ownership?
 
-**For future additional improvements:**
+### 3 - Future additional improvements
 
-- Implement custom struct?
+- Implement custom structures
 - Add support for CONSTANT expression in array size, and any non unit type expression in the init value during array definition. It should support any valid type expression.
 - May want to add usize type for indexing (would be useful for ranges as well). May need to add "as" keyword then to convert i32 to usize.
 - Add `return x;` statement to be able to return from a function early. Add `break;` and `continue;` statements for 'while' and 'for' loops. Break statements can return a value from an infinite loop: `break x;`.
